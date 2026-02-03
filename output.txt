@@ -1,0 +1,201 @@
+============================================================
+Processing 301.bdf...
+============================================================
+Extracting BDF parameters from C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\FG_Data_For_Students\RawEEGData_1-4\301.bdf...
+Setting channel info structure...
+Creating raw.info structure...
+Total channels: 193
+Duration: 2817.00 seconds
+Sample rate: 2048.0 Hz
+
+Participant 1 channels: 64
+Participant 2 channels: 64
+Participant 3 channels: 64
+Stimulus channels: ['Status']
+
+  Processing Participant 1...
+Reading 0 ... 5769215  =      0.000 ...  2817.000 secs...
+    Filtering 1-40 Hz...
+    Completed! (64 EEG channels)
+
+  Processing Participant 2...
+Reading 0 ... 5769215  =      0.000 ...  2817.000 secs...
+    Filtering 1-40 Hz...
+    Completed! (64 EEG channels)
+
+  Processing Participant 3...
+Reading 0 ... 5769215  =      0.000 ...  2817.000 secs...
+    Filtering 1-40 Hz...
+    Completed! (64 EEG channels)
+
+============================================================
+Processing 302.bdf...
+============================================================
+Extracting BDF parameters from C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\FG_Data_For_Students\RawEEGData_1-4\302.bdf...
+Setting channel info structure...
+Creating raw.info structure...
+Total channels: 193
+Duration: 2487.00 seconds
+Sample rate: 2048.0 Hz
+
+Participant 1 channels: 64
+Participant 2 channels: 64
+Participant 3 channels: 64
+Stimulus channels: ['Status']
+
+  Processing Participant 1...
+Reading 0 ... 5093375  =      0.000 ...  2487.000 secs...
+    Filtering 1-40 Hz...
+    Completed! (64 EEG channels)
+
+  Processing Participant 2...
+Reading 0 ... 5093375  =      0.000 ...  2487.000 secs...
+    Filtering 1-40 Hz...
+    Completed! (64 EEG channels)
+
+  Processing Participant 3...
+Reading 0 ... 5093375  =      0.000 ...  2487.000 secs...
+    Filtering 1-40 Hz...
+    Completed! (64 EEG channels)
+
+============================================================
+Processing 303.bdf...
+============================================================
+Extracting BDF parameters from C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\FG_Data_For_Students\RawEEGData_1-4\303.bdf...
+Setting channel info structure...
+Creating raw.info structure...
+Total channels: 193
+Duration: 2565.00 seconds
+Sample rate: 2048.0 Hz
+
+Participant 1 channels: 64
+Participant 2 channels: 64
+Participant 3 channels: 64
+Stimulus channels: ['Status']
+
+  Processing Participant 1...
+Reading 0 ... 5253119  =      0.000 ...  2565.000 secs...
+    Filtering 1-40 Hz...
+    Completed! (64 EEG channels)
+
+  Processing Participant 2...
+Reading 0 ... 5253119  =      0.000 ...  2565.000 secs...
+    Filtering 1-40 Hz...
+    Completed! (64 EEG channels)
+
+  Processing Participant 3...
+Reading 0 ... 5253119  =      0.000 ...  2565.000 secs...
+    Filtering 1-40 Hz...
+    Completed! (64 EEG channels)
+
+============================================================
+Processing 304.bdf...
+============================================================
+Extracting BDF parameters from C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\FG_Data_For_Students\RawEEGData_1-4\304.bdf...
+Setting channel info structure...
+Creating raw.info structure...
+Total channels: 193
+Duration: 2496.00 seconds
+Sample rate: 2048.0 Hz
+
+Participant 1 channels: 64
+Participant 2 channels: 64
+Participant 3 channels: 64
+Stimulus channels: ['Status']
+
+  Processing Participant 1...
+Reading 0 ... 5111807  =      0.000 ...  2496.000 secs...
+    Filtering 1-40 Hz...
+    Completed! (64 EEG channels)
+
+  Processing Participant 2...
+Reading 0 ... 5111807  =      0.000 ...  2496.000 secs...
+    Filtering 1-40 Hz...
+    Completed! (64 EEG channels)
+
+  Processing Participant 3...
+Reading 0 ... 5111807  =      0.000 ...  2496.000 secs...
+    Filtering 1-40 Hz...
+    Completed! (64 EEG channels)
+
+============================================================
+SUMMARY OF ALL FILES
+============================================================
+
+--- Participant 1 ---
+
+  File 301.bdf:
+    Channels: 64 EEG + 1 stimulus
+    Duration: 2817.00 seconds (46.95 minutes)
+    Sample rate: 2048.0 Hz
+    Filter: 1.0-40.0 Hz
+
+  File 302.bdf:
+    Channels: 64 EEG + 1 stimulus
+    Duration: 2487.00 seconds (41.45 minutes)
+    Sample rate: 2048.0 Hz
+    Filter: 1.0-40.0 Hz
+
+  File 303.bdf:
+    Channels: 64 EEG + 1 stimulus
+    Duration: 2565.00 seconds (42.75 minutes)
+    Sample rate: 2048.0 Hz
+    Filter: 1.0-40.0 Hz
+
+  File 304.bdf:
+    Channels: 64 EEG + 1 stimulus
+    Duration: 2496.00 seconds (41.60 minutes)
+    Sample rate: 2048.0 Hz
+    Filter: 1.0-40.0 Hz
+
+--- Participant 2 ---
+
+  File 301.bdf:
+    Channels: 64 EEG + 1 stimulus
+    Duration: 2817.00 seconds (46.95 minutes)
+    Sample rate: 2048.0 Hz
+    Filter: 1.0-40.0 Hz
+
+  File 302.bdf:
+    Channels: 64 EEG + 1 stimulus
+    Duration: 2487.00 seconds (41.45 minutes)
+    Sample rate: 2048.0 Hz
+    Filter: 1.0-40.0 Hz
+
+  File 303.bdf:
+    Channels: 64 EEG + 1 stimulus
+    Duration: 2565.00 seconds (42.75 minutes)
+    Sample rate: 2048.0 Hz
+    Filter: 1.0-40.0 Hz
+
+  File 304.bdf:
+    Channels: 64 EEG + 1 stimulus
+    Duration: 2496.00 seconds (41.60 minutes)
+    Sample rate: 2048.0 Hz
+    Filter: 1.0-40.0 Hz
+
+--- Participant 3 ---
+
+  File 301.bdf:
+    Channels: 64 EEG + 1 stimulus
+    Duration: 2817.00 seconds (46.95 minutes)
+    Sample rate: 2048.0 Hz
+    Filter: 1.0-40.0 Hz
+
+  File 302.bdf:
+    Channels: 64 EEG + 1 stimulus
+    Duration: 2487.00 seconds (41.45 minutes)
+    Sample rate: 2048.0 Hz
+    Filter: 1.0-40.0 Hz
+
+  File 303.bdf:
+    Channels: 64 EEG + 1 stimulus
+    Duration: 2565.00 seconds (42.75 minutes)
+    Sample rate: 2048.0 Hz
+    Filter: 1.0-40.0 Hz
+
+  File 304.bdf:
+    Channels: 64 EEG + 1 stimulus
+    Duration: 2496.00 seconds (41.60 minutes)
+    Sample rate: 2048.0 Hz
+    Filter: 1.0-40.0 Hz
