@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 base_path = "C:\\Users\\clara\\OneDrive - Danmarks Tekniske Universitet\\Skrivebord\\DTU\\Human Centeret Artificial Intelligence\\Thesis\\FG_Data_For_Students\\RawEEGData_1-4"
 
 # Choose which file and participant to visualize
-file_name = '301.bdf'  # Change to '302.bdf', '303.bdf', or '304.bdf'
-participant_num = 1     # Change to 2 or 3 for other participants
+file_name = '301.bdf'  
+participant_num = 1    
 
 file_path = f"{base_path}\\{file_name}"
 
