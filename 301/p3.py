@@ -33,32 +33,46 @@ raw_p.load_data()
 print("Filtering 1-40 Hz...")
 raw_p.filter(l_freq=1.0, h_freq=40.0, fir_design='firwin', verbose=False)
 
+# Downsample to 512 Hz
+print("Downsampling to 512 Hz...")
+raw_p.resample(sfreq=512, npad='auto')
+
 # Rename channels to remove participant prefix
 channel_mapping = {ch: ch.replace(f'{participant_num}-', '') for ch in participant_channels}
 raw_p.rename_channels(channel_mapping)
 
+# Find events (trial onsets)
+print("Finding events...")
+events = mne.find_events(raw_p, stim_channel='Status', shortest_event=1, verbose=False)
+print(f"Found {len(events)} events")
+
+# Create epochs: -0.5 to 5.5 seconds relative to trial onset
+print("Creating epochs (-0.5 to 5.5 s)...")
+epochs = mne.Epochs(raw_p, events, tmin=-0.5, tmax=5.5, baseline=None, preload=True, verbose=False)
+print(f"Created {len(epochs)} epochs")
+
 print(f"\nData loaded successfully!")
-print(f"Channels: {len(raw_p.ch_names)-1} EEG + 1 stimulus")
-print(f"Duration: {raw_p.times[-1]:.2f} seconds ({raw_p.times[-1]/60:.2f} minutes)")
-print(f"Sample rate: {raw_p.info['sfreq']} Hz")
-print(f"Filter: {raw_p.info['highpass']}-{raw_p.info['lowpass']} Hz")
+print(f"Channels: {len(epochs.ch_names)-1} EEG + 1 stimulus")
+print(f"Epochs: {len(epochs)}")
+print(f"Epoch duration: {epochs.tmax - epochs.tmin:.1f} seconds")
+print(f"Sample rate: {epochs.info['sfreq']} Hz")
+print(f"Filter: {epochs.info['highpass']}-{epochs.info['lowpass']} Hz")
 
 print("\n" + "="*60)
 print("Opening interactive plot...")
 print("="*60)
 print("\nControls:")
-print("  - Use arrow keys to navigate through time")
+print("  - Use arrow keys to navigate between epochs")
 print("  - Use +/- to zoom in/out")
 print("  - Click on channels to mark as bad")
 print("  - Press 'h' for help")
 print("="*60)
 
-# Create the interactive plot
-fig = raw_p.plot(
+# Create the interactive plot - showing first trial (epoch 0)
+fig = epochs.plot(
     n_channels=20,      # Show 20 channels at a time
-    duration=10,        # Show 10 seconds of data
+    n_epochs=1,         # Show 1 epoch at a time
     scalings='auto',    # Auto-scale amplitudes
-    start=0,            # Start at beginning
     block=True          # Keep window open
 )
 
