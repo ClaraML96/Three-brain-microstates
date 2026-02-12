@@ -68,10 +68,10 @@ print("  - Click on channels to mark as bad")
 print("  - Press 'h' for help")
 print("="*60)
 
-# Create the interactive plot - showing first trial (epoch 0)
+# Create the interactive plot - showing multiple epochs
 fig = epochs.plot(
     n_channels=20,      # Show 20 channels at a time
-    n_epochs=1,         # Show 1 epoch at a time
+    n_epochs=10,        # Show 10 epochs at a time
     scalings='auto',    # Auto-scale amplitudes
     block=True          # Keep window open
 )

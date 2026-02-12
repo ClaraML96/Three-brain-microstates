@@ -76,6 +76,13 @@ fig = epochs.plot(
     block=True          # Keep window open
 )
 
+# fig = epochs.plot(
+#     n_channels=32,
+#     n_epochs=20,
+#     scalings='auto',
+#     block=True
+# )
+
 plt.show()
 
 print("\nPlot closed. Done!")
