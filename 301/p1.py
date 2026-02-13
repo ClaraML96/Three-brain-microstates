@@ -3,6 +3,93 @@ import matplotlib
 matplotlib.use('TkAgg')  # Use TkAgg backend for interactive plots
 import matplotlib.pyplot as plt
 
+
+def manual_epoch_inspection(epochs):
+    """
+    Manually inspect epochs to identify and remove bad epochs.
+    
+    Opens an interactive plot for visual inspection, allowing you to mark
+    bad epochs by clicking on them. Then removes all marked bad epochs.
+    
+    Parameters
+    ----------
+    epochs : mne.Epochs
+        The epochs object to inspect
+    
+    Returns
+    -------
+    epochs : mne.Epochs
+        The cleaned epochs with bad epochs removed
+    """
+    print("\n" + "="*60)
+    print("Manual Epoch Inspection")
+    print("="*60)
+    print("Instructions:")
+    print("  - Click on epochs to mark them as bad")
+    print("  - Use arrow keys to navigate")
+    print("  - Close the window when done")
+    print("="*60)
+    
+    # Open interactive plot
+    fig = epochs.plot(
+        n_channels=32,      # Show 32 channels
+        n_epochs=5,         # Show 5 epochs at a time
+        scalings=dict(eeg=50e-6),  # Fixed scaling: 50 microvolts
+        block=True          # Block until window closes
+    )
+    
+    plt.show()
+    
+    # Remove bad epochs
+    epochs.drop_bad()
+    
+    # Print results
+    print(f"Remaining epochs: {len(epochs)}")
+    
+    return epochs
+
+
+def amplitude_rejection(epochs, threshold_uv=150):
+    """
+    Reject epochs exceeding an amplitude threshold.
+    
+    Automatically removes epochs where any EEG channel exceeds the
+    specified amplitude threshold.
+    
+    Parameters
+    ----------
+    epochs : mne.Epochs
+        The epochs object to clean
+    threshold_uv : float
+        Amplitude threshold in microvolts (default: 150)
+    
+    Returns
+    -------
+    epochs : mne.Epochs
+        The cleaned epochs with high-amplitude epochs removed
+    """
+    # Convert threshold from microvolts to volts
+    threshold_v = threshold_uv * 1e-6
+    
+    # Count initial epochs
+    initial_count = len(epochs)
+    
+    # Drop epochs exceeding threshold
+    epochs.drop_bad(reject=dict(eeg=threshold_v), verbose=False)
+    
+    # Calculate dropped and remaining counts
+    remaining_count = len(epochs)
+    dropped_count = initial_count - remaining_count
+    
+    # Print summary
+    print(f"Amplitude Rejection ({threshold_uv} µV):")
+    print(f"  Initial:  {initial_count} epochs")
+    print(f"  Dropped:  {dropped_count} epochs")
+    print(f"  Remaining: {remaining_count} epochs")
+    
+    return epochs
+
+
 # Define file path
 base_path = "C:\\Users\\clara\\OneDrive - Danmarks Tekniske Universitet\\Skrivebord\\DTU\\Human Centeret Artificial Intelligence\\Thesis\\FG_Data_For_Students\\RawEEGData_1-4"
 
@@ -51,6 +138,9 @@ print("Creating epochs (-0.5 to 5.5 s)...")
 epochs = mne.Epochs(raw_p, events, tmin=-0.5, tmax=5.5, baseline=None, preload=True, verbose=False)
 print(f"Created {len(epochs)} epochs")
 
+# Apply amplitude rejection
+epochs = amplitude_rejection(epochs, threshold_uv=300)
+
 print(f"\nData loaded successfully!")
 print(f"Channels: {len(epochs.ch_names)-1} EEG + 1 stimulus")
 print(f"Epochs: {len(epochs)}")
@@ -68,20 +158,14 @@ print("  - Click on channels to mark as bad")
 print("  - Press 'h' for help")
 print("="*60)
 
-# Create the interactive plot - showing first trial (epoch 0)
-fig = epochs.plot(
-    n_channels=20,      # Show 20 channels at a time
-    n_epochs=1,         # Show 1 epoch at a time
-    scalings='auto',    # Auto-scale amplitudes
-    block=True          # Keep window open
-)
+# Perform manual epoch inspection
+epochs = manual_epoch_inspection(epochs)
 
-# fig = epochs.plot(
-#     n_channels=32,
-#     n_epochs=20,
-#     scalings='auto',
-#     block=True
-# )
+print(f"Final epochs after manual marking: {len(epochs)}")
+
+plt.show()
+
+print("\nDone!")
 
 plt.show()
 
