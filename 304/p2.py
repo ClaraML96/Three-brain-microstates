@@ -145,7 +145,7 @@ def manual_epoch_inspection(epochs):
 
 # Configuration
 DATA_PATH = "C:\\Users\\clara\\OneDrive - Danmarks Tekniske Universitet\\Skrivebord\\DTU\\Human Centeret Artificial Intelligence\\Thesis\\FG_Data_For_Students\\RawEEGData_1-4"
-FILE_NAME = '302.bdf'
+FILE_NAME = '304.bdf'
 PARTICIPANT = 2
 
 # Processing parameters
