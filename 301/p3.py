@@ -239,3 +239,5 @@ print(f"  Duration per epoch: {epochs.tmax - epochs.tmin:.1f} s")
 print(f"  Sampling rate: {epochs.info['sfreq']} Hz")
 print(f"  Filter: {epochs.info['highpass']}–{epochs.info['lowpass']} Hz")
 print(f"{'='*70}\n")
+
+# 0 epochs removed by visual inspection

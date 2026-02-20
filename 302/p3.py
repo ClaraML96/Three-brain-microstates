@@ -1,67 +1,243 @@
+import numpy as np
 import mne
 import matplotlib
-matplotlib.use('TkAgg')  # Use TkAgg backend for interactive plots
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
-# Define file path
-base_path = "C:\\Users\\clara\\OneDrive - Danmarks Tekniske Universitet\\Skrivebord\\DTU\\Human Centeret Artificial Intelligence\\Thesis\\FG_Data_For_Students\\RawEEGData_1-4"
 
-# Choose which file and participant to visualize
-file_name = '302.bdf'  
-participant_num = 3     
+# ============================================================================
+# PREPROCESSING FUNCTIONS
+# ============================================================================
 
-file_path = f"{base_path}\\{file_name}"
+def detect_bad_channels(raw, threshold_mad=5.0):
+    """
+    Detect bad EEG channels using robust MAD-based z-scores.
+    
+    Identifies channels with abnormally high variance, which typically indicate
+    poor electrode contact or drift. Uses median absolute deviation (MAD) for
+    robustness to outliers.
+    
+    Parameters
+    ----------
+    raw : mne.io.Raw
+        Raw EEG data
+    threshold_mad : float
+        MAD z-score threshold for bad channel detection (default: 5.0)
+    
+    Returns
+    -------
+    raw : mne.io.Raw
+        Raw data with bad channels marked in raw.info['bads']
+    """
+    eeg = raw.copy().pick('eeg')
+    data = eeg.get_data()
+    
+    # Variance-based detection
+    channel_vars = np.var(data, axis=1)
+    median_var = np.median(channel_vars)
+    mad = np.median(np.abs(channel_vars - median_var))
+    
+    # Robust z-score (handle MAD == 0)
+    z_scores = np.zeros_like(channel_vars) if mad == 0 else (channel_vars - median_var) / (mad * 1.4826)
+    
+    # Find bad channels
+    bad_channels = [ch for ch, z in zip(eeg.ch_names, z_scores) if z > threshold_mad]
+    raw.info['bads'] = bad_channels
+    
+    # Diagnostic output
+    print(f"Bad Channels (MAD-based, z > {threshold_mad}):")
+    print(f"  Checked: {len(eeg.ch_names)} channels")
+    print(f"  Bad: {len(bad_channels)} channels")
+    if bad_channels:
+        print(f"  Channels: {', '.join(bad_channels)}")
+    
+    return raw
 
-print(f"Loading {file_name} for Participant {participant_num}...")
-print("="*60)
 
-# Load the raw data (without preloading to save memory)
+def detect_bad_epochs_ptp(epochs, threshold_uv=300):
+    """
+    Detect and reject bad epochs based on peak-to-peak amplitude.
+    
+    Identifies epochs with extreme amplitude values in any channel, which
+    typically indicate muscle artifacts, electrode artifacts, or signal loss.
+    
+    Parameters
+    ----------
+    epochs : mne.Epochs
+        Epochs object
+    threshold_uv : float
+        Peak-to-peak amplitude threshold in microvolts (default: 300)
+    
+    Returns
+    -------
+    epochs : mne.Epochs
+        Epochs with bad epochs removed
+    """
+    initial_count = len(epochs)
+    threshold_v = threshold_uv * 1e-6
+    
+    # Automatic amplitude rejection
+    epochs.drop_bad(reject=dict(eeg=threshold_v), verbose=False)
+    
+    final_count = len(epochs)
+    dropped = initial_count - final_count
+    
+    # Diagnostic output
+    print(f"Bad Epochs (peak-to-peak > {threshold_uv} µV):")
+    print(f"  Initial: {initial_count} epochs")
+    print(f"  Dropped: {dropped} epochs")
+    print(f"  Remaining: {final_count} epochs")
+    
+    return epochs
+
+
+def manual_epoch_inspection(epochs):
+    """
+    Visually inspect and manually mark bad epochs for rejection.
+    
+    Opens an interactive plot allowing manual rejection of epochs with
+    artifacts not caught by automatic methods (e.g., movement artifacts,
+    physiological noise).
+    
+    Parameters
+    ----------
+    epochs : mne.Epochs
+        Epochs object
+    
+    Returns
+    -------
+    epochs : mne.Epochs
+        Epochs with manually marked bad epochs removed
+    """
+    print("\n" + "="*70)
+    print("MANUAL EPOCH INSPECTION")
+    print("="*70)
+    print("Click on epochs to mark as bad | Arrow keys to navigate | Close to finish")
+    print("="*70)
+    
+    initial_count = len(epochs)
+    
+    # Interactive inspection (32 channels, 5 epochs, 50 µV scaling)
+    epochs.plot(
+        n_channels=32,
+        n_epochs=5,
+        scalings=dict(eeg=50e-6),
+        block=True
+    )
+    
+    # Remove marked bad epochs
+    epochs.drop_bad(verbose=False)
+    
+    final_count = len(epochs)
+    rejected = initial_count - final_count
+    
+    print(f"\nManual Inspection:")
+    print(f"  Initial: {initial_count} epochs")
+    print(f"  Rejected: {rejected} epochs")
+    print(f"  Remaining: {final_count} epochs")
+    
+    return epochs
+
+
+# ============================================================================
+# MAIN PREPROCESSING PIPELINE
+# ============================================================================
+
+# Configuration
+DATA_PATH = "C:\\Users\\clara\\OneDrive - Danmarks Tekniske Universitet\\Skrivebord\\DTU\\Human Centeret Artificial Intelligence\\Thesis\\FG_Data_For_Students\\RawEEGData_1-4"
+FILE_NAME = '302.bdf'
+PARTICIPANT = 3
+
+# Processing parameters
+FILTER_LOW = 1.0  # Hz
+FILTER_HIGH = 40.0  # Hz
+RESAMPLE_FREQ = 512  # Hz
+BAD_CHANNEL_THRESHOLD = 3.0  # MAD z-score
+BAD_EPOCH_THRESHOLD = 300  # µV
+EPOCH_TMIN = -0.5  # seconds
+EPOCH_TMAX = 5.5  # seconds
+
+# -------
+# Step 1: Load and extract participant data
+# -------
+file_path = f"{DATA_PATH}\\{FILE_NAME}"
+print(f"\n{'='*70}")
+print(f"LOADING: {FILE_NAME} | Participant {PARTICIPANT}")
+print(f"{'='*70}")
+
 raw = mne.io.read_raw_bdf(file_path, preload=False)
-
-# Get channels for the selected participant
-participant_channels = [ch for ch in raw.ch_names if ch.startswith(f'{participant_num}-')]
+participant_channels = [ch for ch in raw.ch_names if ch.startswith(f'{PARTICIPANT}-')]
 stimulus_channels = [ch for ch in raw.ch_names if 'Status' in ch or 'STI' in ch]
-
-# Pick only this participant's channels
 raw_p = raw.copy().pick(participant_channels + stimulus_channels)
 
-# Load data into memory
-print("Loading data...")
+# -------
+# Step 2: Prepare data (load, filter, resample)
+# -------
+print(f"\nData preparation:")
 raw_p.load_data()
+print(f"  Loaded: {len(raw_p.ch_names)} channels")
 
-# Apply bandpass filter: 1-40 Hz
-print("Filtering 1-40 Hz...")
-raw_p.filter(l_freq=1.0, h_freq=40.0, fir_design='firwin', verbose=False)
+print(f"  Filtering: {FILTER_LOW}–{FILTER_HIGH} Hz (Hamming)")
+raw_p.filter(l_freq=FILTER_LOW, h_freq=FILTER_HIGH, fir_design='firwin', verbose=False)
+
+print(f"  Resampling: {RESAMPLE_FREQ} Hz")
+raw_p.resample(sfreq=RESAMPLE_FREQ, npad='auto')
+
+# -------
+# Step 3: Detect bad channels, rename, set montage, and interpolate
+# -------
+print(f"\n")
+raw_p = detect_bad_channels(raw_p, threshold_mad=BAD_CHANNEL_THRESHOLD)
 
 # Rename channels to remove participant prefix
-channel_mapping = {ch: ch.replace(f'{participant_num}-', '') for ch in participant_channels}
+channel_mapping = {ch: ch.replace(f'{PARTICIPANT}-', '') for ch in participant_channels}
 raw_p.rename_channels(channel_mapping)
 
-print(f"\nData loaded successfully!")
-print(f"Channels: {len(raw_p.ch_names)-1} EEG + 1 stimulus")
-print(f"Duration: {raw_p.times[-1]:.2f} seconds ({raw_p.times[-1]/60:.2f} minutes)")
-print(f"Sample rate: {raw_p.info['sfreq']} Hz")
-print(f"Filter: {raw_p.info['highpass']}-{raw_p.info['lowpass']} Hz")
+# Assign standard 10-20 montage for interpolation
+if raw_p.info['bads']:
+    print(f"  Setting standard 10-20 montage...")
+    montage = mne.channels.make_standard_montage("standard_1020")
+    raw_p.set_montage(montage)
+    print(f"  Interpolating {len(raw_p.info['bads'])} bad channel(s)...")
+    raw_p.interpolate_bads(reset_bads=True)
 
-print("\n" + "="*60)
-print("Opening interactive plot...")
-print("="*60)
-print("\nControls:")
-print("  - Use arrow keys to navigate through time")
-print("  - Use +/- to zoom in/out")
-print("  - Click on channels to mark as bad")
-print("  - Press 'h' for help")
-print("="*60)
+# -------
+# Step 4: Find events
+# -------
+events = mne.find_events(raw_p, stim_channel='Status', shortest_event=1, verbose=False)
+print(f"  Found {len(events)} trial onsets")
 
-# Create the interactive plot
-fig = raw_p.plot(
-    n_channels=20,      # Show 20 channels at a time
-    duration=10,        # Show 10 seconds of data
-    scalings='auto',    # Auto-scale amplitudes
-    start=0,            # Start at beginning
-    block=True          # Keep window open
+# -------
+# Step 5: Create epochs
+# -------
+print(f"\nEpoch creation:")
+print(f"  Window: {EPOCH_TMIN} to {EPOCH_TMAX} s")
+epochs = mne.Epochs(
+    raw_p, events,
+    tmin=EPOCH_TMIN, tmax=EPOCH_TMAX,
+    baseline=None,
+    preload=True,
+    verbose=False
 )
+print(f"  Created: {len(epochs)} epochs")
 
-plt.show()
+# -------
+# Step 6: Manual inspection
+# -------
+epochs = manual_epoch_inspection(epochs)
 
-print("\nPlot closed. Done!")
+# -------
+# Summary
+# -------
+print(f"\n{'='*70}")
+print(f"PREPROCESSING COMPLETE")
+print(f"{'='*70}")
+print(f"Final Dataset:")
+print(f"  Epochs: {len(epochs)}")
+print(f"  Channels: {len(epochs.ch_names) - 1} EEG + 1 stimulus")
+print(f"  Duration per epoch: {epochs.tmax - epochs.tmin:.1f} s")
+print(f"  Sampling rate: {epochs.info['sfreq']} Hz")
+print(f"  Filter: {epochs.info['highpass']}–{epochs.info['lowpass']} Hz")
+print(f"{'='*70}\n")
+
+# 1 epoch removed by visual inspection
