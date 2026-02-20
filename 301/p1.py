@@ -222,13 +222,7 @@ epochs = mne.Epochs(
 print(f"  Created: {len(epochs)} epochs")
 
 # -------
-# Step 6: Automatic bad epoch rejection (amplitude)
-# -------
-print(f"\n")
-epochs = detect_bad_epochs_ptp(epochs, threshold_uv=BAD_EPOCH_THRESHOLD)
-
-# -------
-# Step 7: Manual inspection
+# Step 6: Manual inspection
 # -------
 epochs = manual_epoch_inspection(epochs)
 
