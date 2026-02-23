@@ -240,4 +240,4 @@ print(f"  Sampling rate: {epochs.info['sfreq']} Hz")
 print(f"  Filter: {epochs.info['highpass']}–{epochs.info['lowpass']} Hz")
 print(f"{'='*70}\n")
 
-# 1 epoch removed by visual inspection
+# 2 epochs removed by visual inspection
