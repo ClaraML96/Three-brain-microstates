@@ -202,13 +202,20 @@ if raw_p.info['bads']:
     raw_p.interpolate_bads(reset_bads=True)
 
 # -------
-# Step 4: Find events
+# Step 4: Re-reference to common average
+# -------
+print(f"\nRe-referencing:")
+raw_p.set_eeg_reference('average', projection=False, verbose=False)
+print(f"  Applied common average reference")
+
+# -------
+# Step 5: Find events
 # -------
 events = mne.find_events(raw_p, stim_channel='Status', shortest_event=1, verbose=False)
 print(f"  Found {len(events)} trial onsets")
 
 # -------
-# Step 5: Create epochs
+# Step 6: Create epochs
 # -------
 print(f"\nEpoch creation:")
 print(f"  Window: {EPOCH_TMIN} to {EPOCH_TMAX} s")
@@ -222,9 +229,79 @@ epochs = mne.Epochs(
 print(f"  Created: {len(epochs)} epochs")
 
 # -------
-# Step 6: Manual inspection
+# Step 7: Manual inspection
 # -------
 epochs = manual_epoch_inspection(epochs)
+
+# ============================================================================
+# ICA ARTIFACT REMOVAL
+# ============================================================================
+
+# -------
+# Step 8: Run Picard ICA with 32 components
+# -------
+print(f"\n{'='*70}")
+print(f"ICA DECOMPOSITION")
+print(f"{'='*70}")
+
+print(f"Fitting ICA:")
+print(f"  Method: Picard")
+print(f"  Components: 32")
+print(f"  Random state: 97")
+
+ica = mne.preprocessing.ICA(
+    n_components=32,
+    method='picard',
+    random_state=97,
+    max_iter='auto'
+)
+
+# Fit ICA on epoched data
+ica.fit(epochs, verbose=False)
+print(f"  ICA fitted successfully")
+print(f"  Explained variance: {ica.get_explained_variance_ratio(epochs)['eeg']:.2%}")
+
+# -------
+# Step 9: Visual identification of artifact components
+# -------
+print(f"\n{'='*70}")
+print(f"COMPONENT IDENTIFICATION")
+print(f"{'='*70}")
+print(f"Identify artifact components:")
+print(f"  - Ocular artifacts (eye blinks, saccades)")
+print(f"  - Cardiac artifacts (heartbeat)")
+print(f"  - Muscle artifacts (EMG)")
+print(f"Close the plot windows when done.")
+print(f"{'='*70}")
+
+# Plot component topographies
+ica.plot_components(inst=epochs, picks=range(32))
+
+# Plot component time courses and spectra
+ica.plot_sources(epochs, show_scrollbars=False, block=True)
+
+# -------
+# Step 10: Manual selection and removal of artifact components
+# -------
+print(f"\nEnter component numbers to exclude (comma-separated, e.g., 0,3,7):")
+user_input = input("Components to remove: ").strip()
+
+if user_input:
+    # Parse user input
+    exclude_components = [int(x.strip()) for x in user_input.split(',') if x.strip().isdigit()]
+    ica.exclude = exclude_components
+    
+    print(f"\nRemoving components:")
+    print(f"  Selected: {exclude_components}")
+    print(f"  Count: {len(exclude_components)} components")
+    
+    # Apply ICA to remove selected components
+    epochs = ica.apply(epochs, verbose=False)
+    print(f"  ICA applied - artifacts removed")
+else:
+    print(f"\nNo components selected - skipping ICA removal")
+
+print(f"{'='*70}")
 
 # -------
 # Summary
