@@ -1,4 +1,5 @@
 import numpy as np
+import os
 import mne
 import matplotlib
 matplotlib.use('TkAgg')
@@ -139,6 +140,184 @@ def manual_epoch_inspection(epochs):
     return epochs
 
 
+def extract_real_trial_events(events, sfreq):
+    """
+    Extract and collapse real trial events from raw event array.
+    
+    This function performs robust filtering to isolate experimental trials:
+    1. Excludes all events before ExpStart trigger (112)
+    2. Excludes practice trials (triggers 1-11)
+    3. Keeps only real experimental trials (triggers 10-59)
+    4. Collapses force levels by extracting second digit (e.g., 23 → 3)
+    5. Validates exactly 300 trials found (10 conditions × 30 force levels)
+    6. Checks for duplicates and balance
+    
+    Parameters
+    ----------
+    events : np.ndarray
+        MNE events array (n_events × 3)
+    sfreq : float
+        Sampling frequency in Hz
+    
+    Returns
+    -------
+    collapsed_events : np.ndarray
+        Filtered and collapsed event array
+    event_id : dict
+        Mapping from condition names to event codes
+    
+    Raises
+    ------
+    RuntimeError
+        If ExpStart trigger not found or wrong number of trials detected
+    """
+    print("\n" + "="*70)
+    print("EVENT FILTERING AND VALIDATION")
+    print("="*70)
+    
+    print(f"Total events found: {len(events)}")
+    
+    # -----------------------------------------------------------------------
+    # Step 1: Find ExpStart trigger and filter events after experiment begins
+    # -----------------------------------------------------------------------
+    exp_start_samples = events[events[:, 2] == 112][:, 0]
+    
+    if len(exp_start_samples) == 0:
+        raise RuntimeError(
+            "ExpStart trigger (code 112) not found in event array. "
+            "Cannot determine experiment start."
+        )
+    
+    exp_start_sample = exp_start_samples[0]
+    events_after_exp = events[events[:, 0] > exp_start_sample]
+    
+    print(f"✓ ExpStart found at sample {exp_start_sample}")
+    print(f"  Events after ExpStart: {len(events_after_exp)}")
+    
+    # -----------------------------------------------------------------------
+    # Step 2: Explicitly exclude practice trials (codes 1-11)
+    # -----------------------------------------------------------------------
+    practice_trials = events_after_exp[
+        (events_after_exp[:, 2] >= 1) & 
+        (events_after_exp[:, 2] <= 11)
+    ]
+    
+    if len(practice_trials) > 0:
+        print(f"  Practice trials detected: {len(practice_trials)} (codes 1-11)")
+        print(f"  → Excluding practice trials")
+    
+    # -----------------------------------------------------------------------
+    # Step 3: Keep only real experimental trials (codes 10-59)
+    # -----------------------------------------------------------------------
+    # Real trials: 10 conditions × 30 repetitions = 300 trials
+    # Trigger codes: X0-X9 where X ∈ {1,2,3,4,5} represents force level
+    # and second digit represents condition
+    real_trials = events_after_exp[
+        (events_after_exp[:, 2] >= 10) & 
+        (events_after_exp[:, 2] <= 59)
+    ]
+    
+    print(f"✓ Real trial triggers found: {len(real_trials)}")
+    
+    # -----------------------------------------------------------------------
+    # Step 4: Validate exactly 300 trials (CRITICAL ASSERTION)
+    # -----------------------------------------------------------------------
+    expected_trials = 300
+    if len(real_trials) != expected_trials:
+        raise RuntimeError(
+            f"Expected exactly {expected_trials} real trial triggers, "
+            f"but found {len(real_trials)}. "
+            f"Data integrity compromised - check raw data and trigger codes."
+        )
+    
+    print(f"✓ Trial count validated: {len(real_trials)} trials (expected: {expected_trials})")
+    
+    # -----------------------------------------------------------------------
+    # Step 5: Collapse force levels (extract second digit only)
+    # -----------------------------------------------------------------------
+    # Example: triggers 10,20,30,40,50 all become condition 0
+    #          triggers 13,23,33,43,53 all become condition 3
+    collapsed_events = real_trials.copy()
+    
+    for i, event in enumerate(collapsed_events):
+        original_code = event[2]
+        condition_code = original_code % 10  # Extract second digit
+        collapsed_events[i, 2] = condition_code
+    
+    unique_conditions = np.unique(collapsed_events[:, 2])
+    print(f"✓ Collapsed to {len(unique_conditions)} conditions: {sorted(unique_conditions)}")
+    
+    # -----------------------------------------------------------------------
+    # Step 6: Check for duplicate sample indices (data integrity)
+    # -----------------------------------------------------------------------
+    sample_indices = collapsed_events[:, 0]
+    unique_samples = np.unique(sample_indices)
+    
+    if len(unique_samples) != len(sample_indices):
+        n_duplicates = len(sample_indices) - len(unique_samples)
+        raise RuntimeError(
+            f"Found {n_duplicates} duplicate event sample indices. "
+            f"This indicates corrupted trigger data."
+        )
+    
+    print(f"✓ No duplicate sample indices detected")
+    
+    # -----------------------------------------------------------------------
+    # Step 7: Validate condition balance (10 epochs per condition)
+    # -----------------------------------------------------------------------
+    expected_per_condition = 30
+    condition_counts = {}
+    
+    for cond in unique_conditions:
+        count = np.sum(collapsed_events[:, 2] == cond)
+        condition_counts[int(cond)] = count
+    
+    print(f"\nCondition balance check:")
+    all_balanced = True
+    for cond in sorted(unique_conditions):
+        count = condition_counts[int(cond)]
+        status = "✓" if count == expected_per_condition else "⚠"
+        print(f"  {status} Condition {int(cond)}: {count} epochs (expected: {expected_per_condition})")
+        if count != expected_per_condition:
+            all_balanced = False
+    
+    if not all_balanced:
+        print(f"\n⚠ WARNING: Condition imbalance detected!")
+        print(f"  Not all conditions have exactly {expected_per_condition} epochs.")
+        print(f"  This may affect statistical analysis.")
+    else:
+        print(f"\n✓ All conditions balanced ({expected_per_condition} epochs each)")
+    
+    # -----------------------------------------------------------------------
+    # Step 8: Calculate minimum inter-event interval
+    # -----------------------------------------------------------------------
+    inter_event_samples = np.diff(collapsed_events[:, 0])
+    min_iei_samples = np.min(inter_event_samples)
+    min_iei_seconds = min_iei_samples / sfreq
+    
+    print(f"\nInter-event interval diagnostics:")
+    print(f"  Minimum IEI: {min_iei_seconds:.3f} s ({min_iei_samples} samples)")
+    print(f"  Mean IEI: {np.mean(inter_event_samples) / sfreq:.3f} s")
+    print(f"  Epoch duration: {EPOCH_TMAX - EPOCH_TMIN:.1f} s")
+    
+    if min_iei_seconds < (EPOCH_TMAX - EPOCH_TMIN):
+        print(f"  ⚠ WARNING: Minimum IEI < epoch duration")
+        print(f"    Epoch overlap is mathematically expected")
+    else:
+        print(f"  ✓ No epoch overlap expected")
+    
+    # -----------------------------------------------------------------------
+    # Step 9: Create event_id dictionary
+    # -----------------------------------------------------------------------
+    event_id = {f"Condition_{int(cond)}": int(cond) 
+                for cond in unique_conditions}
+    
+    print(f"\n✓ Event filtering complete: {len(collapsed_events)} valid trials")
+    print("="*70)
+    
+    return collapsed_events, event_id
+
+
 # ============================================================================
 # MAIN PREPROCESSING PIPELINE
 # ============================================================================
@@ -202,29 +381,106 @@ if raw_p.info['bads']:
     raw_p.interpolate_bads(reset_bads=True)
 
 # -------
-# Step 4: Find events
+# Step 4: Find and filter trial events (robust extraction)
 # -------
 events = mne.find_events(raw_p, stim_channel='Status', shortest_event=1, verbose=False)
-print(f"  Found {len(events)} trial onsets")
+
+# Extract and validate real trial events using robust filtering
+collapsed_events, event_id = extract_real_trial_events(events, raw_p.info['sfreq'])
 
 # -------
 # Step 5: Create epochs
 # -------
-print(f"\nEpoch creation:")
-print(f"  Window: {EPOCH_TMIN} to {EPOCH_TMAX} s")
+print(f"\n{'='*70}")
+print("EPOCH CREATION")
+print(f"{'='*70}")
+
 epochs = mne.Epochs(
-    raw_p, events,
-    tmin=EPOCH_TMIN, tmax=EPOCH_TMAX,
+    raw_p,
+    collapsed_events,
+    event_id=event_id,
+    tmin=EPOCH_TMIN,
+    tmax=EPOCH_TMAX,
     baseline=None,
     preload=True,
     verbose=False
 )
-print(f"  Created: {len(epochs)} epochs")
+
+print(f"✓ Epochs created: {len(epochs)}")
+print(f"  Time window: {EPOCH_TMIN} to {EPOCH_TMAX} s")
+print(f"  Baseline: None (will be applied later if needed)")
+print(f"{'='*70}")
 
 # -------
 # Step 6: Manual inspection
 # -------
 epochs = manual_epoch_inspection(epochs)
+
+# -------
+# Step 7: Save cleaned epochs for ICA
+# -------
+print(f"\n{'='*70}")
+print("SAVING CLEANED EPOCHS")
+print(f"{'='*70}")
+
+# Diagnostic: Current working directory
+print(f"Current working directory: {os.getcwd()}")
+
+# Define save directory (absolute path for Windows reliability)
+SAVE_DIR = r"C:\\Users\\clara\\OneDrive - Danmarks Tekniske Universitet\\Skrivebord\\DTU\\Human Centeret Artificial Intelligence\\Thesis\\data\\preprocessed"
+print(f"Target save directory: {SAVE_DIR}")
+
+# Create directory if it doesn't exist
+try:
+    os.makedirs(SAVE_DIR, exist_ok=True)
+    print(f"✓ Directory created/verified")
+except Exception as e:
+    print(f"⚠ Error creating directory: {e}")
+    raise
+
+# Verify directory exists
+if os.path.isdir(SAVE_DIR):
+    print(f"✓ Directory exists and is accessible")
+else:
+    raise FileNotFoundError(f"Failed to create directory: {SAVE_DIR}")
+
+# Define output file path
+EPOCHS_FILE = os.path.join(SAVE_DIR, "304_p2_clean-epo.fif")
+print(f"Output file path: {EPOCHS_FILE}")
+
+# Save epochs with error handling
+try:
+    print(f"Saving epochs...")
+    epochs.save(EPOCHS_FILE, overwrite=True, verbose=True)
+    print(f"✓ epochs.save() completed without errors")
+except Exception as e:
+    print(f"⚠ Error during save: {e}")
+    raise
+
+# Verify file was created
+if os.path.exists(EPOCHS_FILE):
+    file_size_mb = os.path.getsize(EPOCHS_FILE) / (1024 * 1024)
+    print(f"✓ File created successfully")
+    print(f"  File size: {file_size_mb:.2f} MB")
+    print(f"  Location: {EPOCHS_FILE}")
+else:
+    raise FileNotFoundError(f"File was not created: {EPOCHS_FILE}")
+
+# List all files in the save directory
+print(f"\nFiles in {SAVE_DIR}:")
+try:
+    files = os.listdir(SAVE_DIR)
+    if files:
+        for f in files:
+            full_path = os.path.join(SAVE_DIR, f)
+            size_mb = os.path.getsize(full_path) / (1024 * 1024)
+            print(f"  - {f} ({size_mb:.2f} MB)")
+    else:
+        print("  (directory is empty)")
+except Exception as e:
+    print(f"  Could not list directory: {e}")
+
+print(f"{'='*70}")
 
 # -------
 # Summary
@@ -240,4 +496,4 @@ print(f"  Sampling rate: {epochs.info['sfreq']} Hz")
 print(f"  Filter: {epochs.info['highpass']}–{epochs.info['lowpass']} Hz")
 print(f"{'='*70}\n")
 
-# 3 epochs removed by visual inspection
+# 5 epochs removed by visual inspection
