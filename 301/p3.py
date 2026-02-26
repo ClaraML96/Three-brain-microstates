@@ -496,4 +496,4 @@ print(f"  Sampling rate: {epochs.info['sfreq']} Hz")
 print(f"  Filter: {epochs.info['highpass']}–{epochs.info['lowpass']} Hz")
 print(f"{'='*70}\n")
 
-# 1 bad channel removed by visual inspection
+# 0 epochs or channels removed by visual inspection
