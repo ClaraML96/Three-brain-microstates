@@ -44,7 +44,7 @@ import os
 # ============================================================
 
 # Input/output paths (absolute paths for Windows reliability)
-DATA_DIR = r"C:\\Users\\clara\\Three-brain-microstates\\data\\preprocessed"
+DATA_DIR = r"C:\\Users\\clara\\OneDrive - Danmarks Tekniske Universitet\\Skrivebord\\DTU\\Human Centeret Artificial Intelligence\\Thesis\\data\\preprocessed"
 OUTPUT_DIR = r"C:\\Users\\clara\\Three-brain-microstates\\data\\ica_cleaned"
 
 PARTICIPANT_ID = "301"                # Used for output filenames
@@ -115,18 +115,46 @@ epochs.set_eeg_reference("average", projection=False, verbose=False)
 print("✓ Common average reference applied")
 
 # ============================================================
-# STEP 3: Validate ICA parameters
+# Create high-pass filtered copy for ICA fitting
 # ============================================================
-# Ensure n_components does not exceed available EEG channels
+# ICA decomposition benefits from 1 Hz high-pass filtering:
+# - Removes slow drifts that can bias component separation
+# - Improves stationarity assumption
+# - Does NOT affect final cleaned epochs (applied separately)
 # ============================================================
 
-print(f"\nSTEP 3: Validating ICA parameters")
+print(f"\nCreating 1 Hz high-pass filtered copy for ICA fitting")
 print("-"*70)
+epochs_for_ica = epochs.copy().filter(l_freq=1.0, h_freq=None, verbose=False)
+print("✓ High-pass filtered copy created (1 Hz)")
+print("  This copy is used ONLY for fitting ICA")
+print("  Original broadband epochs will be used for reconstruction")
+
+# ============================================================
+# STEP 3: Estimate data rank and validate ICA parameters
+# ============================================================
+# Compute rank to determine maximum number of ICA components:
+# - Rank can be reduced by: interpolation, bridging, filtering
+# - n_components should not exceed rank
+# ============================================================
+
+print(f"\nSTEP 3: Estimating data rank and validating ICA parameters")
+print("-"*70)
+
+# Compute rank
+rank = mne.compute_rank(epochs, tol=1e-6, tol_kind="relative")
+rank_eeg = rank['eeg']
+print(f"Estimated data rank: {rank_eeg}")
 
 eeg_channels = mne.pick_types(epochs.info, eeg=True, exclude='bads')
 n_eeg = len(eeg_channels)
 
-if N_COMPONENTS > n_eeg:
+# Validate n_components against both channel count and rank
+if N_COMPONENTS > rank_eeg:
+    print(f"⚠ Warning: n_components ({N_COMPONENTS}) > rank ({rank_eeg})")
+    N_COMPONENTS = rank_eeg
+    print(f"  Adjusted to: {N_COMPONENTS} components (data rank)")
+elif N_COMPONENTS > n_eeg:
     print(f"⚠ Warning: n_components ({N_COMPONENTS}) > EEG channels ({n_eeg})")
     N_COMPONENTS = n_eeg
     print(f"  Adjusted to: {N_COMPONENTS} components")
@@ -136,6 +164,8 @@ else:
 print(f"  Method: {METHOD}")
 print(f"  Random state: {RANDOM_STATE}")
 print(f"  Max iterations: auto")
+print(f"  Decimation: 2 (faster fitting)")
+print(f"  Rejection threshold: 300 µV (exclude gross artifacts)")
 
 # ============================================================
 # STEP 4: Fit ICA decomposition
@@ -144,24 +174,36 @@ print(f"  Max iterations: auto")
 # - Each component = spatially fixed source
 # - Components are statistically independent
 # - Artifacts typically isolated to single components
+# 
+# FITTING DATA: 1 Hz high-pass filtered copy (epochs_for_ica)
+# - Removes slow drifts for better decomposition
+# - Rejects epochs with amplitudes > 300 µV
+# - Decimated by factor of 2 for speed
 # ============================================================
 
 print(f"\nSTEP 4: Fitting ICA decomposition")
 print("-"*70)
+print("Fitting ICA on 1 Hz high-pass filtered data...")
 print("This may take 1-3 minutes depending on data size...")
 
 ica = mne.preprocessing.ICA(
     n_components=N_COMPONENTS,
     method=METHOD,
     random_state=RANDOM_STATE,
-    max_iter="auto",
-    fit_params=dict(ortho=False, extended=True)
+    max_iter="auto"
 )
 
-ica.fit(epochs, verbose=False)
+ica.fit(
+    epochs_for_ica,
+    decim=2,
+    reject=dict(eeg=300e-6),
+    verbose=False
+)
 
 print("✓ ICA fitting complete")
 print(f"  Components extracted: {ica.n_components_}")
+print(f"  Fitted on: 1 Hz high-pass filtered copy")
+print(f"  Will apply to: Original broadband epochs")
 
 # Calculate explained variance
 explained_var = ica.get_explained_variance_ratio(epochs, ch_type='eeg')
@@ -170,9 +212,10 @@ print(f"  Explained variance: {explained_var['eeg']:.1%}")
 # ============================================================
 # STEP 5: Automatic artifact detection
 # ============================================================
-# Attempt automatic detection of EOG and ECG components:
+# Attempt automatic detection of EOG, ECG, and muscle components:
 # - find_bads_eog: correlates components with eye blinks
 # - find_bads_ecg: correlates components with heartbeat
+# - find_bads_muscle: detects high-frequency muscle artifacts
 # These are suggestions only - always verify visually!
 # ============================================================
 
@@ -205,8 +248,20 @@ except Exception as e:
     print(f"⚠ ECG detection failed: {str(e)}")
     print("  (No ECG channels or insufficient data)")
 
+# Muscle detection
+muscle_inds = []
+try:
+    muscle_inds, muscle_scores = ica.find_bads_muscle(epochs_for_ica, verbose=False)
+    if muscle_inds:
+        print(f"✓ Muscle components detected: {muscle_inds}")
+        print(f"  Scores: {[f'{muscle_scores[i]:.2f}' for i in muscle_inds]}")
+    else:
+        print("  No strong muscle components detected")
+except Exception as e:
+    print(f"⚠ Muscle detection failed: {str(e)}")
+
 # Combine suggestions
-suggested = sorted(list(set(eog_inds + ecg_inds)))
+suggested = sorted(list(set(eog_inds + ecg_inds + muscle_inds)))
 if suggested:
     print(f"\n→ Suggested components to remove: {suggested}")
     print("  (Verify these visually before accepting!)")
@@ -292,6 +347,9 @@ else:
 # STEP 8: Apply ICA cleaning
 # ============================================================
 # Remove selected components and reconstruct clean epochs
+# 
+# IMPORTANT: ICA is applied to the ORIGINAL broadband epochs,
+# NOT the 1 Hz filtered copy used for fitting
 # ============================================================
 
 print(f"\nSTEP 8: Applying ICA cleaning")
@@ -299,8 +357,9 @@ print("-"*70)
 
 if ica.exclude:
     print(f"Removing {len(ica.exclude)} component(s)...")
+    print(f"Applying to: Original broadband epochs (not 1 Hz filtered copy)")
     cleaned_epochs = ica.apply(epochs.copy(), verbose=False)
-    print(f"✓ ICA applied - artifacts removed")
+    print(f"✓ ICA applied - artifacts removed from broadband data")
 else:
     print("No components excluded - returning original epochs")
     cleaned_epochs = epochs.copy()
