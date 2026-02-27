@@ -45,7 +45,7 @@ import os
 
 # Input/output paths (absolute paths for Windows reliability)
 DATA_DIR = r"C:\\Users\\clara\\OneDrive - Danmarks Tekniske Universitet\\Skrivebord\\DTU\\Human Centeret Artificial Intelligence\\Thesis\\data\\preprocessed"
-OUTPUT_DIR = r"C:\\Users\\clara\\Three-brain-microstates\\data\\ica_cleaned"
+OUTPUT_DIR = r"C:\\Users\\clara\\OneDrive - Danmarks Tekniske Universitet\\Skrivebord\\DTU\\Human Centeret Artificial Intelligence\\Thesis\\data\\ica_cleaned"
 
 PARTICIPANT_ID = "301"                # Used for output filenames
 EPOCH_FILE = os.path.join(DATA_DIR, f"{PARTICIPANT_ID}_p1_clean-epo.fif")
@@ -402,7 +402,7 @@ try:
     else:
         raise FileNotFoundError(f"Cleaned epochs file was not created: {CLEANED_EPOCHS_FILE}")
 except Exception as e:
-    print(f"❌ Failed to save cleaned epochs: {e}")
+    print(f"X Failed to save cleaned epochs: {e}")
     raise
 
 
