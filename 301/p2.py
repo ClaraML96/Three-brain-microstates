@@ -372,6 +372,13 @@ raw_p = detect_bad_channels(raw_p, threshold_mad=BAD_CHANNEL_THRESHOLD)
 channel_mapping = {ch: ch.replace(f'{PARTICIPANT}-', '') for ch in participant_channels}
 raw_p.rename_channels(channel_mapping)
 
+# Add manually identified bad channels
+manual_bad_channels = ['PO3']
+manual_bad_in_data = [ch for ch in manual_bad_channels if ch in raw_p.ch_names]
+raw_p.info['bads'] = sorted(set(raw_p.info['bads']).union(manual_bad_in_data))
+if manual_bad_in_data:
+    print(f"  Added manual bad channel(s): {', '.join(manual_bad_in_data)}")
+
 # Assign standard 10-20 montage for interpolation
 if raw_p.info['bads']:
     print(f"  Setting standard 10-20 montage...")
