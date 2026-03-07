@@ -10,136 +10,6 @@ import matplotlib.pyplot as plt
 # PREPROCESSING FUNCTIONS
 # ============================================================================
 
-def detect_bad_channels(raw, threshold_mad=5.0):
-    """
-    Detect bad EEG channels using robust MAD-based z-scores.
-    
-    Identifies channels with abnormally high variance, which typically indicate
-    poor electrode contact or drift. Uses median absolute deviation (MAD) for
-    robustness to outliers.
-    
-    Parameters
-    ----------
-    raw : mne.io.Raw
-        Raw EEG data
-    threshold_mad : float
-        MAD z-score threshold for bad channel detection (default: 5.0)
-    
-    Returns
-    -------
-    raw : mne.io.Raw
-        Raw data with bad channels marked in raw.info['bads']
-    """
-    eeg = raw.copy().pick('eeg')
-    data = eeg.get_data()
-    
-    # Variance-based detection
-    channel_vars = np.var(data, axis=1)
-    median_var = np.median(channel_vars)
-    mad = np.median(np.abs(channel_vars - median_var))
-    
-    # Robust z-score (handle MAD == 0)
-    z_scores = np.zeros_like(channel_vars) if mad == 0 else (channel_vars - median_var) / (mad * 1.4826)
-    
-    # Find bad channels
-    bad_channels = [ch for ch, z in zip(eeg.ch_names, z_scores) if z > threshold_mad]
-    raw.info['bads'] = bad_channels
-    
-    # Diagnostic output
-    print(f"Bad Channels (MAD-based, z > {threshold_mad}):")
-    print(f"  Checked: {len(eeg.ch_names)} channels")
-    print(f"  Bad: {len(bad_channels)} channels")
-    if bad_channels:
-        print(f"  Channels: {', '.join(bad_channels)}")
-    
-    return raw
-
-
-def detect_bad_epochs_ptp(epochs, threshold_uv=300):
-    """
-    Detect and reject bad epochs based on peak-to-peak amplitude.
-    
-    Identifies epochs with extreme amplitude values in any channel, which
-    typically indicate muscle artifacts, electrode artifacts, or signal loss.
-    
-    Parameters
-    ----------
-    epochs : mne.Epochs
-        Epochs object
-    threshold_uv : float
-        Peak-to-peak amplitude threshold in microvolts (default: 300)
-    
-    Returns
-    -------
-    epochs : mne.Epochs
-        Epochs with bad epochs removed
-    """
-    initial_count = len(epochs)
-    threshold_v = threshold_uv * 1e-6
-    
-    # Automatic amplitude rejection
-    epochs.drop_bad(reject=dict(eeg=threshold_v), verbose=False)
-    
-    final_count = len(epochs)
-    dropped = initial_count - final_count
-    
-    # Diagnostic output
-    print(f"Bad Epochs (peak-to-peak > {threshold_uv} µV):")
-    print(f"  Initial: {initial_count} epochs")
-    print(f"  Dropped: {dropped} epochs")
-    print(f"  Remaining: {final_count} epochs")
-    
-    return epochs
-
-
-def manual_epoch_inspection(epochs):
-    """
-    Visually inspect and manually mark bad epochs for rejection.
-    
-    Opens an interactive plot allowing manual rejection of epochs with
-    artifacts not caught by automatic methods (e.g., movement artifacts,
-    physiological noise).
-    
-    Parameters
-    ----------
-    epochs : mne.Epochs
-        Epochs object
-    
-    Returns
-    -------
-    epochs : mne.Epochs
-        Epochs with manually marked bad epochs removed
-    """
-    print("\n" + "="*70)
-    print("MANUAL EPOCH INSPECTION")
-    print("="*70)
-    print("Click on epochs to mark as bad | Arrow keys to navigate | Close to finish")
-    print("="*70)
-    
-    initial_count = len(epochs)
-    
-    # Interactive inspection (32 channels, 5 epochs, 50 µV scaling)
-    epochs.plot(
-        n_channels=32,
-        n_epochs=5,
-        scalings=dict(eeg=50e-6),
-        block=True
-    )
-    
-    # Remove marked bad epochs
-    epochs.drop_bad(verbose=False)
-    
-    final_count = len(epochs)
-    rejected = initial_count - final_count
-    
-    print(f"\nManual Inspection:")
-    print(f"  Initial: {initial_count} epochs")
-    print(f"  Rejected: {rejected} epochs")
-    print(f"  Remaining: {final_count} epochs")
-    
-    return epochs
-
-
 def extract_real_trial_events(events, sfreq):
     """
     Extract and collapse real trial events from raw event array.
@@ -331,10 +201,23 @@ PARTICIPANT = 1
 FILTER_LOW = 1.0  # Hz
 FILTER_HIGH = 40.0  # Hz
 RESAMPLE_FREQ = 512  # Hz
-BAD_CHANNEL_THRESHOLD = 3.0  # MAD z-score
-BAD_EPOCH_THRESHOLD = 300  # µV
 EPOCH_TMIN = -0.5  # seconds
 EPOCH_TMAX = 5.5  # seconds
+
+# Bad channels and epochs lookup tables
+BAD_CHANNELS_LOOKUP = {
+    (301, 1): [], (301, 2): ['PO3'], (301, 3): [],
+    (302, 1): [], (302, 2): [], (302, 3): [],
+    (303, 1): ['T7', 'TP7'], (303, 2): [], (303, 3): ['FT7', 'FC5', 'T7'],
+    (304, 1): ['T7'], (304, 2): [], (304, 3): [],
+}
+
+BAD_EPOCHS_LOOKUP = {
+    (301, 1): [76], (301, 2): [], (301, 3): [],
+    (302, 1): [80,134,180,265,266], (302, 2): [65,66,91,239], (302, 3): [80,94],
+    (303, 1): [260], (303, 2): [126,209,227,250,266,267,268,275,285,290], (303, 3): [9,119,257,272],
+    (304, 1): [8,12], (304, 2): [50,93,175,265,288], (304, 3): [193,232,234,236,238,242,243,244,268,269,284,289,292],
+}
 
 # -------
 # Step 1: Load and extract participant data
@@ -363,14 +246,24 @@ print(f"  Resampling: {RESAMPLE_FREQ} Hz")
 raw_p.resample(sfreq=RESAMPLE_FREQ, npad='auto')
 
 # -------
-# Step 3: Detect bad channels, rename, set montage, and interpolate
+# Step 3: Apply predefined bad channels and interpolate
 # -------
 print(f"\n")
-raw_p = detect_bad_channels(raw_p, threshold_mad=BAD_CHANNEL_THRESHOLD)
 
 # Rename channels to remove participant prefix
 channel_mapping = {ch: ch.replace(f'{PARTICIPANT}-', '') for ch in participant_channels}
 raw_p.rename_channels(channel_mapping)
+
+# Look up predefined bad channels
+trial_id = int(FILE_NAME.replace('.bdf', ''))
+bad_channels = BAD_CHANNELS_LOOKUP.get((trial_id, PARTICIPANT), [])
+raw_p.info['bads'] = bad_channels
+
+print(f"Predefined Bad Channels:")
+print(f"  Trial ID: {trial_id}, Participant: {PARTICIPANT}")
+print(f"  Bad channels: {len(bad_channels)}")
+if bad_channels:
+    print(f"  Channels: {', '.join(bad_channels)}")
 
 # Assign standard 10-20 montage for interpolation
 if raw_p.info['bads']:
@@ -379,6 +272,8 @@ if raw_p.info['bads']:
     raw_p.set_montage(montage)
     print(f"  Interpolating {len(raw_p.info['bads'])} bad channel(s)...")
     raw_p.interpolate_bads(reset_bads=True)
+else:
+    print(f"  No bad channels to interpolate")
 
 # -------
 # Step 4: Find and filter trial events (robust extraction)
@@ -412,9 +307,30 @@ print(f"  Baseline: None (will be applied later if needed)")
 print(f"{'='*70}")
 
 # -------
-# Step 6: Manual inspection
+# Step 6: Drop predefined bad epochs
 # -------
-epochs = manual_epoch_inspection(epochs)
+print(f"\n{'='*70}")
+print("DROPPING PREDEFINED BAD EPOCHS")
+print(f"{'='*70}")
+
+initial_count = len(epochs)
+bad_epoch_indices_1based = BAD_EPOCHS_LOOKUP.get((trial_id, PARTICIPANT), [])
+bad_epoch_indices_0based = [idx - 1 for idx in bad_epoch_indices_1based]
+
+print(f"Trial ID: {trial_id}, Participant: {PARTICIPANT}")
+print(f"Predefined bad epochs (1-based): {bad_epoch_indices_1based}")
+
+if bad_epoch_indices_0based:
+    epochs.drop(bad_epoch_indices_0based, reason='PREDEFINED_BAD', verbose=False)
+    final_count = len(epochs)
+    dropped = initial_count - final_count
+    print(f"\nEpochs dropped: {dropped}")
+    print(f"Epochs remaining: {final_count}")
+else:
+    print(f"\nNo predefined bad epochs to drop")
+    print(f"Epochs remaining: {initial_count}")
+
+print(f"{'='*70}")
 
 # -------
 # Step 7: Save cleaned epochs for ICA
@@ -445,7 +361,7 @@ else:
     raise FileNotFoundError(f"Failed to create directory: {SAVE_DIR}")
 
 # Define output file path
-EPOCHS_FILE = os.path.join(SAVE_DIR, "302_p1_clean-epo.fif")
+EPOCHS_FILE = os.path.join(SAVE_DIR, f"{trial_id}_p{PARTICIPANT}_clean-epo.fif")
 print(f"Output file path: {EPOCHS_FILE}")
 
 # Save epochs with error handling
@@ -495,5 +411,3 @@ print(f"  Duration per epoch: {epochs.tmax - epochs.tmin:.1f} s")
 print(f"  Sampling rate: {epochs.info['sfreq']} Hz")
 print(f"  Filter: {epochs.info['highpass']}–{epochs.info['lowpass']} Hz")
 print(f"{'='*70}\n")
-
-# 5 epochs removed by visual inspection
