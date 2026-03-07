@@ -48,7 +48,8 @@ DATA_DIR = r"C:\\Users\\clara\\OneDrive - Danmarks Tekniske Universitet\\Skriveb
 OUTPUT_DIR = r"C:\\Users\\clara\\OneDrive - Danmarks Tekniske Universitet\\Skrivebord\\DTU\\Human Centeret Artificial Intelligence\\Thesis\\data\\ica_cleaned"
 
 PARTICIPANT_ID = "301"                # Used for output filenames
-EPOCH_FILE = os.path.join(DATA_DIR, f"{PARTICIPANT_ID}_p1_clean-epo.fif")
+PARTICIPANT = 1
+EPOCH_FILE = os.path.join(DATA_DIR, f"{PARTICIPANT_ID}_p{PARTICIPANT}_clean-epo.fif")
 
 # ICA parameters
 N_COMPONENTS = 32                     # Number of ICA components
@@ -56,8 +57,8 @@ RANDOM_STATE = 97                     # For reproducibility
 METHOD = "picard"                     # ICA algorithm (fast, reliable)
 
 # Output files
-ICA_FILE = os.path.join(OUTPUT_DIR, f"{PARTICIPANT_ID}-ica.fif")
-CLEANED_EPOCHS_FILE = os.path.join(OUTPUT_DIR, f"{PARTICIPANT_ID}_ica_cleaned-epo.fif")
+ICA_FILE = os.path.join(OUTPUT_DIR, f"{PARTICIPANT_ID}_p{PARTICIPANT}-ica.fif")
+CLEANED_EPOCHS_FILE = os.path.join(OUTPUT_DIR, f"{PARTICIPANT_ID}_p{PARTICIPANT}_ica_cleaned-epo.fif")
 
 # ============================================================
 # STEP 1: Load preprocessed epochs
@@ -86,6 +87,13 @@ if not os.path.exists(EPOCH_FILE):
     raise FileNotFoundError(f"Epoch file not found: {EPOCH_FILE}")
 
 epochs = mne.read_epochs(EPOCH_FILE, preload=True, verbose=False)
+
+# ------------------------------------------------------------
+# Set standard EEG electrode positions (required for topomaps)
+# ------------------------------------------------------------
+montage = mne.channels.make_standard_montage("standard_1020")
+epochs.set_montage(montage, on_missing="ignore")
+print("✓ Standard 10-20 montage applied")
 
 print(f"✓ Loaded: {EPOCH_FILE}")
 print(f"  Epochs: {len(epochs)}")
@@ -142,7 +150,7 @@ print(f"\nSTEP 3: Estimating data rank and validating ICA parameters")
 print("-"*70)
 
 # Compute rank
-rank = mne.compute_rank(epochs, tol=1e-6, tol_kind="relative")
+rank = mne.compute_rank(epochs_for_ica, tol=1e-6, tol_kind="relative")
 rank_eeg = rank['eeg']
 print(f"Estimated data rank: {rank_eeg}")
 
@@ -216,7 +224,6 @@ print(f"  Explained variance: {explained_var['eeg']:.1%}")
 # - find_bads_eog: correlates components with eye blinks
 # - find_bads_ecg: correlates components with heartbeat
 # - find_bads_muscle: detects high-frequency muscle artifacts
-# These are suggestions only - always verify visually!
 # ============================================================
 
 print(f"\nSTEP 5: Automatic artifact detection")
@@ -306,6 +313,9 @@ ica.plot_components(inst=epochs, picks=range(ica.n_components_))
 
 # Plot time courses and power spectra
 ica.plot_sources(epochs, show_scrollbars=False, block=True)
+
+# Plot properties of suggested components (if any)
+ica.plot_properties(epochs, picks=suggested)
 
 # ============================================================
 # STEP 7: Manual component selection
