@@ -308,6 +308,10 @@ print("   - Muscle: high power >20 Hz")
 print("   - Brain: peaks in alpha/theta bands")
 print("="*70)
 
+# Set montage for topographic plotting
+montage = mne.channels.make_standard_montage("biosemi64")
+epochs.set_montage(montage)
+
 # Plot all components as topographic maps
 ica.plot_components(inst=epochs, picks=range(ica.n_components_))
 
