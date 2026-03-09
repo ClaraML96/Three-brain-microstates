@@ -48,7 +48,7 @@ DATA_DIR = r"C:\\Users\\clara\\OneDrive - Danmarks Tekniske Universitet\\Skriveb
 OUTPUT_DIR = r"C:\\Users\\clara\\OneDrive - Danmarks Tekniske Universitet\\Skrivebord\\DTU\\Human Centeret Artificial Intelligence\\Thesis\\data\\ica_cleaned"
 
 PARTICIPANT_ID = "301"                # Used for output filenames
-PARTICIPANT = 1
+PARTICIPANT = 2
 EPOCH_FILE = os.path.join(DATA_DIR, f"{PARTICIPANT_ID}_p{PARTICIPANT}_clean-epo.fif")
 
 # ICA parameters
