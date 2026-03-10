@@ -238,8 +238,13 @@ try:
         verbose=False
     )
     if eog_inds:
-        print(f"✓ EOG components detected: {[int(i) for i in eog_inds]}")
-        scores_str = [f'{float(eog_scores[j]):.2f}' for j in range(len(eog_inds))]
+        eog_inds = [int(i) for i in eog_inds]
+        print(f"✓ EOG components detected: {eog_inds}")
+        eog_scores = np.array(eog_scores)
+        if eog_scores.ndim == 1:
+            scores_str = [f'{float(eog_scores[i]):.2f}' for i in eog_inds]
+        else:
+            scores_str = [f'{float(np.max(np.abs(eog_scores[:, j]))):.2f}' for j in range(len(eog_inds))]
         print(f"  Correlation scores: {scores_str}")
     else:
         print("  No strong EOG components detected")
@@ -251,15 +256,17 @@ ecg_inds = []
 try:
     ecg_inds, ecg_scores = ica.find_bads_ecg(
         epochs,
-        ch_name='T8',       # Temporal channel as cardiac proxy
+        ch_name='T8',
         method='correlation',
         verbose=False
     )
+    # Only keep components with meaningful correlation (>0.3)
+    ecg_inds = [i for i in ecg_inds if abs(float(ecg_scores[i])) > 0.3]
     if ecg_inds:
         print(f"✓ ECG components detected: {ecg_inds}")
-        print(f"  Correlation scores: {[f'{float(ecg_scores[i]):.2f}' for i in range(len(ecg_inds))]}")
+        print(f"  Correlation scores: {[f'{float(ecg_scores[i]):.2f}' for i in ecg_inds]}")
     else:
-        print("  No strong ECG components detected")
+        print("  No strong ECG components detected (all below 0.3 threshold)")
 except Exception as e:
     print(f"⚠ ECG detection failed: {str(e)}")
 
@@ -317,8 +324,8 @@ print("   - Brain: peaks in alpha/theta bands")
 print("="*70)
 
 # Set montage for topographic plotting
-montage = mne.channels.make_standard_montage("biosemi64")
-epochs.set_montage(montage)
+# montage = mne.channels.make_standard_montage("biosemi64")
+# epochs.set_montage(montage)
 
 # Plot all components as topographic maps
 ica.plot_components(inst=epochs, picks=range(ica.n_components_))
@@ -331,7 +338,7 @@ print("\nPlotting detailed properties of candidate components...")
 print("Each plot shows: topomap, time course, power spectrum, and epoch image")
 print("Close each window to proceed to the next component\n")
 
-candidate_components = [1, 3, 12, 25, 26]
+candidate_components = suggested if suggested else []
 for comp in candidate_components:
     print(f"  Showing properties for ICA{comp:03d}...")
     ica.plot_properties(epochs, picks=[comp], show=True)
@@ -340,7 +347,7 @@ for comp in candidate_components:
 print("✓ Property plots complete")
 
 # Plot properties of suggested components (if any)
-ica.plot_properties(epochs, picks=suggested)
+# ica.plot_properties(epochs, picks=suggested)
 
 # ============================================================
 # STEP 7: Manual component selection
