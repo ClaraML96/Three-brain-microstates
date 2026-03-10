@@ -283,7 +283,7 @@ except Exception as e:
     print(f"⚠ Muscle detection failed: {str(e)}")
 
 # Combine suggestions
-suggested = sorted(list(set(eog_inds + ecg_inds + muscle_inds)))
+suggested = sorted(int(i) for i in set(eog_inds + ecg_inds + muscle_inds))
 if suggested:
     print(f"\n→ Suggested components to remove: {suggested}")
     print("  (Verify these visually before accepting!)")

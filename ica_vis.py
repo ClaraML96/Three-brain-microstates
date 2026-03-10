@@ -62,7 +62,7 @@ plt.axvline(0, linestyle="--")
 
 plt.xlabel("Time (s)")
 plt.ylabel("Amplitude (µV)")
-plt.title(f"Average ERP across trials – Channel {CHANNEL}")
+plt.title(f"Average ERP across trials") 
 
 plt.show()
 
@@ -70,20 +70,20 @@ plt.show()
 # PLOT 2: All trials + average
 # ============================================================
 
-plt.figure(figsize=(8,4))
+# plt.figure(figsize=(8,4))
 
-for trial in data:
-    plt.plot(times, trial, alpha=0.1)
+# for trial in data:
+#     plt.plot(times, trial, alpha=0.1)
 
-plt.plot(times, avg_signal, linewidth=3)
+# plt.plot(times, avg_signal, linewidth=3)
 
-plt.axvline(0, linestyle="--")
+# plt.axvline(0, linestyle="--")
 
-plt.xlabel("Time (s)")
-plt.ylabel("Amplitude (µV)")
-plt.title(f"All trials + average – Channel {CHANNEL}")
+# plt.xlabel("Time (s)")
+# plt.ylabel("Amplitude (µV)")
+# plt.title(f"All trials + average – Channel {CHANNEL}")
 
-plt.show()
+# plt.show()
 
 # ============================================================
 # PLOT 3: Standard ERP plot (all channels)
@@ -107,23 +107,23 @@ evoked.plot_topomap(times=np.linspace(0.05,0.4,6))
 # PLOT 5: Global Field Power (GFP)
 # ============================================================
 
-print("Computing Global Field Power")
+# print("Computing Global Field Power")
 
-evoked_data = evoked.data
+# evoked_data = evoked.data
 
-gfp = np.std(evoked_data, axis=0)
+# gfp = np.std(evoked_data, axis=0)
 
-plt.figure(figsize=(8,4))
+# plt.figure(figsize=(8,4))
 
-plt.plot(times, gfp)
+# plt.plot(times, gfp)
 
-plt.axvline(0, linestyle="--")
+# plt.axvline(0, linestyle="--")
 
-plt.xlabel("Time (s)")
-plt.ylabel("GFP")
+# plt.xlabel("Time (s)")
+# plt.ylabel("GFP")
 
-plt.title("Global Field Power")
+# plt.title("Global Field Power")
 
-plt.show()
+# plt.show()
 
 print("Visualization complete")
