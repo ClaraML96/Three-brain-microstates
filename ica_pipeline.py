@@ -229,31 +229,39 @@ print(f"  Explained variance: {explained_var['eeg']:.1%}")
 print(f"\nSTEP 5: Automatic artifact detection")
 print("-"*70)
 
-# EOG detection
+# EOG detection using frontal EEG channels as proxy
 eog_inds = []
 try:
-    eog_inds, eog_scores = ica.find_bads_eog(epochs, verbose=False)
+    eog_inds, eog_scores = ica.find_bads_eog(
+        epochs,
+        ch_name=['Fp1', 'Fp2'],
+        verbose=False
+    )
     if eog_inds:
-        print(f"✓ EOG components detected: {eog_inds}")
-        print(f"  Correlation scores: {[f'{eog_scores[i]:.2f}' for i in eog_inds]}")
+        print(f"✓ EOG components detected: {[int(i) for i in eog_inds]}")
+        scores_str = [f'{float(eog_scores[j]):.2f}' for j in range(len(eog_inds))]
+        print(f"  Correlation scores: {scores_str}")
     else:
         print("  No strong EOG components detected")
 except Exception as e:
     print(f"⚠ EOG detection failed: {str(e)}")
-    print("  (No EOG channels or insufficient data)")
 
-# ECG detection
+# ECG detection using synthetic heartbeat signal
 ecg_inds = []
 try:
-    ecg_inds, ecg_scores = ica.find_bads_ecg(epochs, verbose=False)
+    ecg_inds, ecg_scores = ica.find_bads_ecg(
+        epochs,
+        ch_name='T8',       # Temporal channel as cardiac proxy
+        method='correlation',
+        verbose=False
+    )
     if ecg_inds:
         print(f"✓ ECG components detected: {ecg_inds}")
-        print(f"  Correlation scores: {[f'{ecg_scores[i]:.2f}' for i in ecg_inds]}")
+        print(f"  Correlation scores: {[f'{float(ecg_scores[i]):.2f}' for i in range(len(ecg_inds))]}")
     else:
         print("  No strong ECG components detected")
 except Exception as e:
     print(f"⚠ ECG detection failed: {str(e)}")
-    print("  (No ECG channels or insufficient data)")
 
 # Muscle detection
 muscle_inds = []
@@ -317,6 +325,19 @@ ica.plot_components(inst=epochs, picks=range(ica.n_components_))
 
 # Plot time courses and power spectra
 ica.plot_sources(epochs, show_scrollbars=False, block=True)
+
+# Plot detailed properties of candidate artifact components
+print("\nPlotting detailed properties of candidate components...")
+print("Each plot shows: topomap, time course, power spectrum, and epoch image")
+print("Close each window to proceed to the next component\n")
+
+candidate_components = [1, 3, 12, 25, 26]
+for comp in candidate_components:
+    print(f"  Showing properties for ICA{comp:03d}...")
+    ica.plot_properties(epochs, picks=[comp], show=True)
+    plt.show(block=True)
+
+print("✓ Property plots complete")
 
 # Plot properties of suggested components (if any)
 ica.plot_properties(epochs, picks=suggested)
