@@ -205,15 +205,17 @@ EPOCH_TMIN = -0.5  # seconds
 EPOCH_TMAX = 5.5  # seconds
 
 # Bad channels and epochs lookup tables
+# BAD_CHANNELS_LOOKUP = {}
 BAD_CHANNELS_LOOKUP = {
-    (301, 1): [], (301, 2): ['PO3'], (301, 3): [],
+    (301, 1): [], (301, 2): ['P8', 'T8', 'PO3'], (301, 3): [],
     (302, 1): [], (302, 2): [], (302, 3): [],
     (303, 1): ['T7', 'TP7'], (303, 2): [], (303, 3): ['FT7', 'FC5', 'T7'],
     (304, 1): ['T7'], (304, 2): [], (304, 3): [],
 }
 
+# BAD_EPOCHS_LOOKUP = {}
 BAD_EPOCHS_LOOKUP = {
-    (301, 1): [76], (301, 2): [], (301, 3): [],
+    (301, 1): [76], (301, 2): [0,1], (301, 3): [],
     (302, 1): [80,134,180,265,266], (302, 2): [65,66,91,239], (302, 3): [80,94],
     (303, 1): [260], (303, 2): [126,209,227,250,266,267,268,275,285,290], (303, 3): [9,119,257,272],
     (304, 1): [8,12], (304, 2): [50,93,175,265,288], (304, 3): [193,232,234,236,238,242,243,244,268,269,284,289,292],
@@ -331,6 +333,44 @@ else:
     print(f"Epochs remaining: {initial_count}")
 
 print(f"{'='*70}")
+
+# -------
+# Step 6: Manual bad-epoch search
+# -------
+# print(f"\n{'='*70}")
+# print("MANUAL BAD-EPOCH SEARCH")
+# print(f"{'='*70}")
+# print("Mark bad epochs in the interactive window, then close it.")
+
+# initial_count = len(epochs)
+
+# epochs.plot(
+#     n_channels=32,
+#     n_epochs=5,
+#     scalings=dict(eeg=50e-6),
+#     block=True
+# )
+
+# # Collect indices marked during manual inspection
+# bad_epoch_indices_0based = [
+#     i for i, reason in enumerate(epochs.drop_log)
+#     if len(reason) > 0
+# ]
+# bad_epoch_indices_1based = [i + 1 for i in bad_epoch_indices_0based]
+
+# print(f"\nTrial ID: {trial_id}, Participant: {PARTICIPANT}")
+# print(f"Marked bad epochs (1-based): {bad_epoch_indices_1based}")
+
+# if bad_epoch_indices_0based:
+#     epochs.drop(bad_epoch_indices_0based, reason='MANUAL_BAD', verbose=False)
+#     final_count = len(epochs)
+#     dropped = initial_count - final_count
+#     print(f"Epochs dropped: {dropped}")
+#     print(f"Epochs remaining: {final_count}")
+# else:
+#     print("No bad epochs marked")
+#     print(f"Epochs remaining: {initial_count}")
+# print(f"{'='*70}")
 
 # -------
 # Step 7: Save cleaned epochs for ICA
