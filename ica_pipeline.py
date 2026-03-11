@@ -49,6 +49,7 @@ OUTPUT_DIR = r"C:\\Users\\clara\\OneDrive - Danmarks Tekniske Universitet\\Skriv
 
 PARTICIPANT_ID = "301"                # Used for output filenames
 PARTICIPANT = 2
+
 EPOCH_FILE = os.path.join(DATA_DIR, f"{PARTICIPANT_ID}_p{PARTICIPANT}_clean-epo.fif")
 
 # ICA parameters
@@ -339,12 +340,12 @@ print("Each plot shows: topomap, time course, power spectrum, and epoch image")
 print("Close each window to proceed to the next component\n")
 
 candidate_components = suggested if suggested else []
-for comp in candidate_components:
-    print(f"  Showing properties for ICA{comp:03d}...")
-    ica.plot_properties(epochs, picks=[comp], show=True)
-    plt.show(block=True)
+# for comp in candidate_components:
+#     print(f"  Showing properties for ICA{comp:03d}...")
+#     ica.plot_properties(epochs, picks=[comp], show=True)
+#     plt.show(block=True)
 
-print("✓ Property plots complete")
+# print("✓ Property plots complete")
 
 # Plot properties of suggested components (if any)
 # ica.plot_properties(epochs, picks=suggested)
