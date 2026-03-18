@@ -73,7 +73,12 @@ CLEANED_EPOCHS_FILE = os.path.join(OUTPUT_DIR, f"{PARTICIPANT_ID}_p{PARTICIPANT}
 print("="*70)
 print("ICA ARTIFACT REMOVAL PIPELINE")
 print("="*70)
-print(f"\nSTEP 1: Loading preprocessed epochs")
+print("\nPIPELINE PHASES:")
+print("  1) Prepare and fit ICA")
+print("  2) Automatic artifact detection")
+print("  3) Visual inspection and apply ICA")
+print(f"\nPHASE 1 — PREPARE AND FIT ICA")
+print(f"Step 1.1: Loading preprocessed epochs")
 print("-"*70)
 
 print(f"Looking for: {EPOCH_FILE}")
@@ -111,7 +116,7 @@ print(f"  Time window: {epochs.tmin:.2f} to {epochs.tmax:.2f} s")
 # - Required before ICA decomposition
 # ============================================================
 
-print(f"\nSTEP 2: Applying common average reference")
+print(f"\nStep 1.2: Applying common average reference")
 print("-"*70)
 
 # Check current reference
@@ -132,7 +137,7 @@ print("✓ Common average reference applied")
 # - Does NOT affect final cleaned epochs (applied separately)
 # ============================================================
 
-print(f"\nCreating 1 Hz high-pass filtered copy for ICA fitting")
+print(f"\nStep 1.3: Creating 1 Hz high-pass filtered copy for ICA fitting")
 print("-"*70)
 epochs_for_ica = epochs.copy().filter(l_freq=1.0, h_freq=None, verbose=False)
 print("✓ High-pass filtered copy created (1 Hz)")
@@ -147,7 +152,7 @@ print("  Original broadband epochs will be used for reconstruction")
 # - n_components should not exceed rank
 # ============================================================
 
-print(f"\nSTEP 3: Estimating data rank and validating ICA parameters")
+print(f"\nStep 1.4: Estimating data rank and validating ICA parameters")
 print("-"*70)
 
 # Compute rank
@@ -190,7 +195,7 @@ print(f"  Rejection threshold: 300 µV (exclude gross artifacts)")
 # - Decimated by factor of 2 for speed
 # ============================================================
 
-print(f"\nSTEP 4: Fitting ICA decomposition")
+print(f"\nStep 1.5: Fitting ICA decomposition")
 print("-"*70)
 print("Fitting ICA on 1 Hz high-pass filtered data...")
 print("This may take 1-3 minutes depending on data size...")
@@ -227,7 +232,8 @@ print(f"  Explained variance: {explained_var['eeg']:.1%}")
 # - find_bads_muscle: detects high-frequency muscle artifacts
 # ============================================================
 
-print(f"\nSTEP 5: Automatic artifact detection")
+print(f"\nPHASE 2 — AUTOMATIC ARTIFACT DETECTION")
+print("Step 2.1: Automatic artifact detection")
 print("-"*70)
 
 # EOG detection using frontal EEG channels as proxy
@@ -304,7 +310,8 @@ else:
 # - Muscle artifacts (high frequency, >20 Hz)
 # ============================================================
 
-print(f"\nSTEP 6: Visual component inspection")
+print(f"\nPHASE 3 — VISUAL INSPECTION AND APPLY ICA")
+print("Step 3.1: Visual component inspection")
 print("-"*70)
 print("Opening interactive plots...")
 print("\n" + "="*70)
@@ -356,7 +363,7 @@ candidate_components = suggested if suggested else []
 # Based on visual inspection, manually enter components to exclude
 # ============================================================
 
-print(f"\nSTEP 7: Manual component selection")
+print(f"\nStep 3.2: Manual component selection")
 print("-"*70)
 print("Based on your visual inspection, enter component numbers to exclude.")
 print(f"Automatic suggestions: {suggested if suggested else 'None'}")
@@ -395,7 +402,7 @@ else:
 # NOT the 1 Hz filtered copy used for fitting
 # ============================================================
 
-print(f"\nSTEP 8: Applying ICA cleaning")
+print(f"\nStep 3.3: Applying ICA cleaning")
 print("-"*70)
 
 if ica.exclude:
