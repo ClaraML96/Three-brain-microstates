@@ -104,7 +104,7 @@ print(
     "as a visual guide only — no automatic dropping is performed."
 )
 print("\nOpening reject_log visualization (bad epochs highlighted in red)...")
-reject_log.plot_epochs(epochs_ar)
+reject_log.plot_epochs(epochs)
 print("Opening interactive epoch browser...")
 epochs_ar.plot(block=True)
 
