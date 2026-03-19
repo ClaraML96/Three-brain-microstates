@@ -10,29 +10,35 @@ import os
 # ============================================================================
 # This script performs Independent Component Analysis (ICA) on preprocessed
 # EEG epochs to identify and remove ocular, cardiac, and muscle artifacts.
-# 
+#
 # Prerequisites:
-# - Epochs must already be filtered, cleaned of bad channels, and have bad
-#   epochs removed
-# - This script does NOT redo basic preprocessing
-# 
+# - Epochs must already be:
+#     • Filtered (1–40 Hz)
+#     • Bad channels interpolated
+#     • Re-referenced to common average        ← done in 01_preprocessing.py
+#     • Bad epochs removed (predefined list)
+# - Do NOT re-apply average reference here — it was applied in step 1.
+# - Do NOT create a separate high-pass filtered copy for ICA fitting.
+#   Fit and apply ICA on the same data object so the unmixing matrix
+#   matches the data it is applied to.
+#
 # ICA Component Rejection Guidelines:
 # ------------------------------------
 # OCULAR ARTIFACTS (eye blinks, saccades):
 #   - Topography: Strong frontal focus (Fp1, Fp2, AF3, AF4)
 #   - Time course: Sharp, transient peaks synchronized with blinks
 #   - Frequency: Broadband but prominent in low frequencies (<4 Hz)
-# 
+#
 # CARDIAC ARTIFACTS (heartbeat, pulse):
 #   - Topography: Lateral or posterior focus, sometimes asymmetric
 #   - Time course: Regular, rhythmic oscillations (~1 Hz, 60 bpm)
 #   - Frequency: Sharp peak at heartbeat frequency and harmonics
-# 
+#
 # MUSCLE ARTIFACTS (jaw clenching, neck tension):
 #   - Topography: Temporal, frontal, or diffuse scalp distribution
 #   - Time course: High-frequency bursts, irregular timing
 #   - Frequency: Dominant power >20 Hz, often >30 Hz
-# 
+#
 # BRAIN ACTIVITY (keep these components):
 #   - Topography: Smooth, biologically plausible scalp distribution
 #   - Time course: Oscillatory patterns in EEG frequency bands
@@ -43,19 +49,18 @@ import os
 # CONFIGURATION
 # ============================================================
 
-# Input/output paths (absolute paths for Windows reliability)
 DATA_DIR = r"C:\\Users\\clara\\OneDrive - Danmarks Tekniske Universitet\\Skrivebord\\DTU\\Human Centeret Artificial Intelligence\\Thesis\\data\\preprocessed"
 OUTPUT_DIR = r"C:\\Users\\clara\\OneDrive - Danmarks Tekniske Universitet\\Skrivebord\\DTU\\Human Centeret Artificial Intelligence\\Thesis\\data\\ica_cleaned"
 
-PARTICIPANT_ID = "301"                # Used for output filenames
+PARTICIPANT_ID = "301"
 PARTICIPANT = 1
 
 EPOCH_FILE = os.path.join(DATA_DIR, f"{PARTICIPANT_ID}_p{PARTICIPANT}_clean-epo.fif")
 
 # ICA parameters
-N_COMPONENTS = 32                     # Number of ICA components
-RANDOM_STATE = 97                     # For reproducibility
-METHOD = "picard"                     # ICA algorithm (fast, reliable)
+N_COMPONENTS = 32       # Number of ICA components
+RANDOM_STATE = 97       # For reproducibility
+METHOD = "picard"       # ICA algorithm (fast, reliable)
 
 # Output files
 ICA_FILE = os.path.join(OUTPUT_DIR, f"{PARTICIPANT_ID}_p{PARTICIPANT}-ica.fif")
@@ -64,20 +69,21 @@ CLEANED_EPOCHS_FILE = os.path.join(OUTPUT_DIR, f"{PARTICIPANT_ID}_p{PARTICIPANT}
 # ============================================================
 # STEP 1: Load preprocessed epochs
 # ============================================================
-# Load epochs that have already been:
-# - Filtered (e.g., 1-40 Hz)
-# - Bad channels interpolated
-# - Bad epochs rejected
+# Epochs loaded here already have:
+#   - 1–40 Hz bandpass filter
+#   - Bad channels interpolated
+#   - Common average reference applied
+#   - Bad epochs removed
 # ============================================================
 
 print("="*70)
 print("ICA ARTIFACT REMOVAL PIPELINE")
 print("="*70)
 print("\nPIPELINE PHASES:")
-print("  1) Prepare and fit ICA")
+print("  1) Fit ICA")
 print("  2) Automatic artifact detection")
 print("  3) Visual inspection and apply ICA")
-print(f"\nPHASE 1 — PREPARE AND FIT ICA")
+print(f"\nPHASE 1 — FIT ICA")
 print(f"Step 1.1: Loading preprocessed epochs")
 print("-"*70)
 
@@ -94,76 +100,47 @@ if not os.path.exists(EPOCH_FILE):
 
 epochs = mne.read_epochs(EPOCH_FILE, preload=True, verbose=False)
 
-# ------------------------------------------------------------
-# Set standard EEG electrode positions (required for topomaps)
-# ------------------------------------------------------------
+# Set standard montage for topographic plotting
 montage = mne.channels.make_standard_montage("standard_1020")
 epochs.set_montage(montage, on_missing="ignore")
 print("✓ Standard 10-20 montage applied")
 
 print(f"✓ Loaded: {EPOCH_FILE}")
 print(f"  Epochs: {len(epochs)}")
-print(f"  Channels: {len(epochs.ch_names)} (excluding stim)")
+print(f"  Channels: {len(epochs.ch_names)}")
 print(f"  Sampling rate: {epochs.info['sfreq']} Hz")
 print(f"  Time window: {epochs.tmin:.2f} to {epochs.tmax:.2f} s")
+print(f"  Reference: already set to common average in preprocessing")
+
+# Confirm average reference is already applied — do not re-apply
+current_ref = epochs.info.get('custom_ref_applied', False)
+if current_ref:
+    print("✓ Custom reference confirmed — no action needed")
+else:
+    print("⚠ WARNING: Average reference not detected in file metadata.")
+    print("  Check that 01_preprocessing.py applied it before saving.")
+    print("  If you need to re-apply: epochs.set_eeg_reference('average')")
 
 # ============================================================
-# STEP 2: Validate and apply common average reference
+# STEP 2: Estimate data rank and validate ICA parameters
 # ============================================================
-# Average reference is critical for ICA:
-# - Removes reference bias
-# - Ensures all channels contribute equally
-# - Required before ICA decomposition
+# Compute rank to determine maximum number of ICA components.
+# Rank is reduced when channels are interpolated, because
+# interpolated channels are linear combinations of their
+# neighbours — they don't add independent information.
+# n_components must not exceed the data rank.
 # ============================================================
 
-print(f"\nStep 1.2: Applying common average reference")
+print(f"\nStep 1.2: Estimating data rank and validating ICA parameters")
 print("-"*70)
 
-# Check current reference
-current_ref = epochs.info['custom_ref_applied']
-if current_ref == mne.io.constants.FIFF.FIFFV_MNE_CUSTOM_REF_ON:
-    print("⚠ Warning: Data already has a custom reference applied")
-    print("  Re-applying average reference...")
-
-epochs.set_eeg_reference("average", projection=False, verbose=False)
-print("✓ Common average reference applied")
-
-# ============================================================
-# Create high-pass filtered copy for ICA fitting
-# ============================================================
-# ICA decomposition benefits from 1 Hz high-pass filtering:
-# - Removes slow drifts that can bias component separation
-# - Improves stationarity assumption
-# - Does NOT affect final cleaned epochs (applied separately)
-# ============================================================
-
-print(f"\nStep 1.3: Creating 1 Hz high-pass filtered copy for ICA fitting")
-print("-"*70)
-epochs_for_ica = epochs.copy().filter(l_freq=1.0, h_freq=None, verbose=False)
-print("✓ High-pass filtered copy created (1 Hz)")
-print("  This copy is used ONLY for fitting ICA")
-print("  Original broadband epochs will be used for reconstruction")
-
-# ============================================================
-# STEP 3: Estimate data rank and validate ICA parameters
-# ============================================================
-# Compute rank to determine maximum number of ICA components:
-# - Rank can be reduced by: interpolation, bridging, filtering
-# - n_components should not exceed rank
-# ============================================================
-
-print(f"\nStep 1.4: Estimating data rank and validating ICA parameters")
-print("-"*70)
-
-# Compute rank
-rank = mne.compute_rank(epochs_for_ica, tol=1e-6, tol_kind="relative")
+rank = mne.compute_rank(epochs, tol=1e-6, tol_kind="relative")
 rank_eeg = rank['eeg']
 print(f"Estimated data rank: {rank_eeg}")
 
 eeg_channels = mne.pick_types(epochs.info, eeg=True, exclude='bads')
 n_eeg = len(eeg_channels)
 
-# Validate n_components against both channel count and rank
 if N_COMPONENTS > rank_eeg:
     print(f"⚠ Warning: n_components ({N_COMPONENTS}) > rank ({rank_eeg})")
     N_COMPONENTS = rank_eeg
@@ -177,27 +154,35 @@ else:
 
 print(f"  Method: {METHOD}")
 print(f"  Random state: {RANDOM_STATE}")
-print(f"  Max iterations: auto")
-print(f"  Decimation: 2 (faster fitting)")
-print(f"  Rejection threshold: 300 µV (exclude gross artifacts)")
 
 # ============================================================
-# STEP 4: Fit ICA decomposition
+# STEP 3: Fit ICA decomposition
 # ============================================================
-# Picard algorithm decomposes EEG into independent components:
-# - Each component = spatially fixed source
-# - Components are statistically independent
-# - Artifacts typically isolated to single components
-# 
-# FITTING DATA: 1 Hz high-pass filtered copy (epochs_for_ica)
-# - Removes slow drifts for better decomposition
-# - Rejects epochs with amplitudes > 300 µV
-# - Decimated by factor of 2 for speed
+# ICA is fitted directly on the preprocessed epochs — the same
+# data object that will be cleaned. This is critical:
+#
+#   WHY NOT A SEPARATE FILTERED COPY?
+#   The unmixing matrix W learned during ICA.fit() is specific
+#   to the statistical structure of the data it was trained on.
+#   If you fit on a differently-filtered version (e.g. an extra
+#   1 Hz high-pass copy) and apply to the original, the matrix
+#   is mismatched: W assumes source distributions that don't
+#   exist in the target data, causing brain signal to leak into
+#   artifact components and vice versa.
+#
+#   The data is already filtered at 1–40 Hz, which is sufficient
+#   for ICA. No additional filtering step is needed.
+#
+# Rejection threshold: epochs with peak-to-peak amplitude
+# > 300 µV are excluded from the ICA fitting (not from the
+# final data) to prevent gross artifacts from biasing the
+# decomposition. These epochs are still present in the output.
 # ============================================================
 
-print(f"\nStep 1.5: Fitting ICA decomposition")
+print(f"\nStep 1.3: Fitting ICA decomposition")
 print("-"*70)
-print("Fitting ICA on 1 Hz high-pass filtered data...")
+print("Fitting ICA on preprocessed epochs (1–40 Hz, average referenced)...")
+print("Note: fitting and applying on the same data — no separate filtered copy.")
 print("This may take 1-3 minutes depending on data size...")
 
 ica = mne.preprocessing.ICA(
@@ -208,35 +193,39 @@ ica = mne.preprocessing.ICA(
 )
 
 ica.fit(
-    epochs_for_ica,
-    decim=2,
-    reject=dict(eeg=300e-6),
+    epochs,
+    decim=2,              # Speed up fitting; does not affect output quality
+    reject=dict(eeg=300e-6),  # Exclude grossly artefacted epochs from fitting only
     verbose=False
 )
 
 print("✓ ICA fitting complete")
 print(f"  Components extracted: {ica.n_components_}")
-print(f"  Fitted on: 1 Hz high-pass filtered copy")
-print(f"  Will apply to: Original broadband epochs")
+print(f"  Fitted and will be applied to: same preprocessed epochs")
 
-# Calculate explained variance
 explained_var = ica.get_explained_variance_ratio(epochs, ch_type='eeg')
 print(f"  Explained variance: {explained_var['eeg']:.1%}")
 
 # ============================================================
-# STEP 5: Automatic artifact detection
+# STEP 4: Automatic artifact detection
 # ============================================================
-# Attempt automatic detection of EOG, ECG, and muscle components:
-# - find_bads_eog: correlates components with eye blinks
-# - find_bads_ecg: correlates components with heartbeat
-# - find_bads_muscle: detects high-frequency muscle artifacts
+# No dedicated EOG/ECG channels are present in this dataset.
+# Automatic detection uses EEG proxies:
+#   - EOG: frontal channels Fp1/Fp2 as blink surrogates
+#   - ECG: lateral channel T8 as heartbeat surrogate
+#   - Muscle: find_bads_muscle on the epoched data
+#
+# Automatic muscle detection is used to GUIDE
+# manual inspection — not as ground truth. Treat all automatic
+# suggestions as candidates to verify visually.
 # ============================================================
 
 print(f"\nPHASE 2 — AUTOMATIC ARTIFACT DETECTION")
 print("Step 2.1: Automatic artifact detection")
 print("-"*70)
+print("Note: no dedicated EOG/ECG channels — using EEG proxies.")
+print("Automatic suggestions guide visual inspection only.")
 
-# EOG detection using frontal EEG channels as proxy
 eog_inds = []
 try:
     eog_inds, eog_scores = ica.find_bads_eog(
@@ -254,11 +243,10 @@ try:
             scores_str = [f'{float(np.max(np.abs(eog_scores[:, j]))):.2f}' for j in range(len(eog_inds))]
         print(f"  Correlation scores: {scores_str}")
     else:
-        print("  No strong EOG components detected")
+        print("  No strong EOG components detected automatically")
 except Exception as e:
     print(f"⚠ EOG detection failed: {str(e)}")
 
-# ECG detection using synthetic heartbeat signal
 ecg_inds = []
 try:
     ecg_inds, ecg_scores = ica.find_bads_ecg(
@@ -277,37 +265,29 @@ try:
 except Exception as e:
     print(f"⚠ ECG detection failed: {str(e)}")
 
-# Muscle detection
 muscle_inds = []
 try:
-    muscle_inds, muscle_scores = ica.find_bads_muscle(epochs_for_ica, verbose=False)
+    muscle_inds, muscle_scores = ica.find_bads_muscle(epochs, verbose=False)
     if muscle_inds:
         print(f"✓ Muscle components detected: {muscle_inds}")
         print(f"  Scores: {[f'{muscle_scores[i]:.2f}' for i in muscle_inds]}")
     else:
-        print("  No strong muscle components detected")
+        print("  No strong muscle components detected automatically")
 except Exception as e:
     print(f"⚠ Muscle detection failed: {str(e)}")
 
-# Combine suggestions
 suggested = sorted(int(i) for i in set(eog_inds + ecg_inds + muscle_inds))
 if suggested:
-    print(f"\n→ Suggested components to remove: {suggested}")
-    print("  (Verify these visually before accepting!)")
+    print(f"\n→ Suggested components to inspect: {suggested}")
+    print("  Verify all of these visually before excluding anything!")
 else:
-    print("\n  No components automatically detected")
+    print("\n  No components automatically suggested — inspect all manually")
 
 # ============================================================
-# STEP 6: Visual inspection of ICA components
+# STEP 5: Visual inspection of ICA components
 # ============================================================
-# Open interactive plots for manual inspection:
-# 1. Topographic maps (spatial distribution)
-# 2. Time courses and frequency spectra
-# 
-# Use the guidelines at the top of this script to identify:
-# - Ocular artifacts (frontal, low frequency)
-# - Cardiac artifacts (rhythmic, ~1 Hz)
-# - Muscle artifacts (high frequency, >20 Hz)
+# Open interactive plots for manual inspection.
+# Use the guidelines at the top of this script.
 # ============================================================
 
 print(f"\nPHASE 3 — VISUAL INSPECTION AND APPLY ICA")
@@ -329,38 +309,28 @@ print("   - EOG: broadband, low frequency dominant")
 print("   - ECG: sharp peak at heartbeat frequency")
 print("   - Muscle: high power >20 Hz")
 print("   - Brain: peaks in alpha/theta bands")
+print("\n4. BRAIN LEAKAGE WARNING:")
+print("   - If a putative artifact component has a smooth,")
+print("     biologically plausible topography AND clear alpha/")
+print("     theta peaks in its spectrum → do NOT remove it.")
+print("   - Removing brain components is worse than keeping")
+print("     a small artifact.")
 print("="*70)
-
-# Set montage for topographic plotting
-# montage = mne.channels.make_standard_montage("biosemi64")
-# epochs.set_montage(montage)
 
 # Plot all components as topographic maps
 ica.plot_components(inst=epochs, picks=range(ica.n_components_))
 
-# Plot time courses and power spectra
+# Plot time courses — use block=True to pause execution until closed
 ica.plot_sources(epochs, show_scrollbars=False, block=True)
 
-# Plot detailed properties of candidate artifact components
 print("\nPlotting detailed properties of candidate components...")
 print("Each plot shows: topomap, time course, power spectrum, and epoch image")
 print("Close each window to proceed to the next component\n")
 
 candidate_components = suggested if suggested else []
-# for comp in candidate_components:
-#     print(f"  Showing properties for ICA{comp:03d}...")
-#     ica.plot_properties(epochs, picks=[comp], show=True)
-#     plt.show(block=True)
-
-# print("✓ Property plots complete")
-
-# Plot properties of suggested components (if any)
-# ica.plot_properties(epochs, picks=suggested)
 
 # ============================================================
-# STEP 7: Manual component selection
-# ============================================================
-# Based on visual inspection, manually enter components to exclude
+# STEP 6: Manual component selection
 # ============================================================
 
 print(f"\nStep 3.2: Manual component selection")
@@ -375,59 +345,52 @@ user_input = input("Components to remove: ").strip()
 if user_input:
     try:
         exclude_components = sorted([int(x.strip()) for x in user_input.split(',') if x.strip().isdigit()])
-        
-        # Validate component numbers
+
         invalid = [c for c in exclude_components if c >= ica.n_components_]
         if invalid:
             raise ValueError(f"Invalid component numbers: {invalid} (max: {ica.n_components_-1})")
-        
+
         ica.exclude = exclude_components
         print(f"\n✓ Components marked for removal: {exclude_components}")
         print(f"  Total: {len(exclude_components)} / {ica.n_components_} components")
-        
+
     except ValueError as e:
         print(f"\n⚠ Error parsing input: {e}")
         print("No components will be removed.")
         ica.exclude = []
 else:
-    print("\n→ No components selected - skipping ICA cleaning")
+    print("\n→ No components selected — skipping ICA cleaning")
     ica.exclude = []
 
 # ============================================================
-# STEP 8: Apply ICA cleaning
+# STEP 7: Apply ICA cleaning
 # ============================================================
-# Remove selected components and reconstruct clean epochs
-# 
-# IMPORTANT: ICA is applied to the ORIGINAL broadband epochs,
-# NOT the 1 Hz filtered copy used for fitting
+# ICA is applied to the same epochs object it was fitted on.
+# This is consistent and avoids the mismatch problem described
+# in Step 3 above.
 # ============================================================
 
 print(f"\nStep 3.3: Applying ICA cleaning")
 print("-"*70)
 
 if ica.exclude:
-    print(f"Removing {len(ica.exclude)} component(s)...")
-    print(f"Applying to: Original broadband epochs (not 1 Hz filtered copy)")
+    print(f"Removing {len(ica.exclude)} component(s): {ica.exclude}")
     cleaned_epochs = ica.apply(epochs.copy(), verbose=False)
-    print(f"✓ ICA applied - artifacts removed from broadband data")
+    print(f"✓ ICA applied — artifacts removed")
 else:
-    print("No components excluded - returning original epochs")
+    print("No components excluded — returning original epochs unchanged")
     cleaned_epochs = epochs.copy()
 
 # ============================================================
-# STEP 9: Save outputs
+# STEP 8: Save outputs
 # ============================================================
 
-print("\nSTEP 9: Saving outputs")
+print("\nSTEP 8: Saving outputs")
 print("-"*70)
 
-# Create output directory
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 print(f"Output directory: {OUTPUT_DIR}")
 
-# --------------------
-# Save ICA object
-# --------------------
 try:
     ica.save(ICA_FILE, overwrite=True)
     if os.path.exists(ICA_FILE):
@@ -440,9 +403,6 @@ except Exception as e:
     print(f"Failed to save ICA object: {e}")
     raise
 
-# --------------------
-# Save cleaned epochs
-# --------------------
 try:
     cleaned_epochs.save(CLEANED_EPOCHS_FILE, overwrite=True)
     if os.path.exists(CLEANED_EPOCHS_FILE):
@@ -452,9 +412,8 @@ try:
     else:
         raise FileNotFoundError(f"Cleaned epochs file was not created: {CLEANED_EPOCHS_FILE}")
 except Exception as e:
-    print(f"X Failed to save cleaned epochs: {e}")
+    print(f"✗ Failed to save cleaned epochs: {e}")
     raise
-
 
 # ============================================================
 # SUMMARY
@@ -463,10 +422,10 @@ except Exception as e:
 print("\n" + "="*70)
 print("ICA PIPELINE COMPLETE")
 print("="*70)
-print(f"Input epochs:      {EPOCH_FILE}")
-print(f"ICA decomposition: {ICA_FILE}")
-print(f"Cleaned epochs:    {CLEANED_EPOCHS_FILE}")
+print(f"Input epochs:        {EPOCH_FILE}")
+print(f"ICA decomposition:   {ICA_FILE}")
+print(f"Cleaned epochs:      {CLEANED_EPOCHS_FILE}")
 print(f"Components excluded: {ica.exclude if ica.exclude else 'None'}")
-print(f"Final epochs: {len(cleaned_epochs)}")
-print(f"Final channels: {len(cleaned_epochs.ch_names)}")
+print(f"Final epochs:        {len(cleaned_epochs)}")
+print(f"Final channels:      {len(cleaned_epochs.ch_names)}")
 print("="*70 + "\n")
