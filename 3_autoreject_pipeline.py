@@ -10,10 +10,10 @@ from autoreject import AutoReject
 # artefacts that ICA did not remove — e.g. movement spikes, isolated channel
 # glitches within single epochs.
 #
-# Per the paper: "Autoreject 0.4.3 was employed to catch any remaining
+# AutoReject is employed to catch any remaining
 # artefacts by interpolating specific bad channels within each epoch,
 # followed by a guided final manual visual inspection with highlighted
-# bad epochs determined by the algorithm."
+# bad epochs determined by the algorithm.
 #
 # Pipeline position:
 #   01_preprocessing.py  → filter, resample, interpolate, avg ref, epoch
