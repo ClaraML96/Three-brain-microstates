@@ -190,7 +190,7 @@ def extract_real_trial_events(events, sfreq, epoch_tmin, epoch_tmax):
 # Configuration
 DATA_PATH = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\FG_Data_For_Students\RawEEGData_1-4"
 FILE_NAME = '301.bdf'
-PARTICIPANT = 1
+PARTICIPANT = 2
 
 # Processing parameters
 FILTER_LOW = 1.0    # Hz highpass filter — removes slow drifts
