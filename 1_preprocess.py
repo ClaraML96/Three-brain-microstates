@@ -190,7 +190,7 @@ def extract_real_trial_events(events, sfreq, epoch_tmin, epoch_tmax):
 # Configuration
 DATA_PATH = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\FG_Data_For_Students\RawEEGData_1-4"
 FILE_NAME = '301.bdf'
-PARTICIPANT = 2
+PARTICIPANT = 3
 
 # Processing parameters
 FILTER_LOW = 1.0    # Hz highpass filter — removes slow drifts
@@ -201,14 +201,14 @@ EPOCH_TMAX = 5.5    # seconds
 
 # Bad channels and epochs lookup tables
 BAD_CHANNELS_LOOKUP = {
-    (301, 1): [], (301, 2): ['P8', 'T8', 'PO3'], (301, 3): [],
+    (301, 1): [], (301, 2): ['P8', 'T8', 'PO3'], (301, 3): ['T8', 'Fp1', 'AF3', 'F7', 'Fp1', 'PO8'],
     (302, 1): [], (302, 2): [], (302, 3): [],
     (303, 1): ['T7', 'TP7'], (303, 2): [], (303, 3): ['FT7', 'FC5', 'T7'],
     (304, 1): ['T7'], (304, 2): [], (304, 3): [],
 }
 
 BAD_EPOCHS_LOOKUP = {
-    (301, 1): [76], (301, 2): [0,1], (301, 3): [],
+    (301, 1): [76], (301, 2): [0,1], (301, 3): [101, 102, 103, 142, 144, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 165, 172, 173, 179, 183, 184, 186, 188, 190, 191, 200, 208, 209, 214, 215, 224, 225, 227, 228, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 243, 250, 251, 252, 278],
     (302, 1): [80,134,180,265,266], (302, 2): [65,66,91,239], (302, 3): [80,94],
     (303, 1): [260], (303, 2): [126,209,227,250,266,267,268,275,285,290], (303, 3): [9,119,257,272],
     (304, 1): [8,12], (304, 2): [50,93,175,265,288], (304, 3): [193,232,234,236,238,242,243,244,268,269,284,289,292],
