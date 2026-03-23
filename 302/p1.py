@@ -198,8 +198,8 @@ FILE_NAME = '302.bdf'
 PARTICIPANT = 1
 
 # Processing parameters
-FILTER_LOW = 1.0  # Hz
-FILTER_HIGH = 40.0  # Hz
+FILTER_LOW = 1.0  # Hz highpass filter
+FILTER_HIGH = 40.0  # Hz lowpass filter
 RESAMPLE_FREQ = 512  # Hz
 EPOCH_TMIN = -0.5  # seconds
 EPOCH_TMAX = 5.5  # seconds
@@ -220,11 +220,12 @@ BAD_EPOCHS_LOOKUP = {
 }
 
 # -------
-# Step 1: Load and extract participant data
+# Step 1: Load data
 # -------
 file_path = f"{DATA_PATH}\\{FILE_NAME}"
 print(f"\n{'='*70}")
-print(f"LOADING: {FILE_NAME} | Participant {PARTICIPANT}")
+print(f"STEP 1/6: LOAD DATA")
+print(f"File: {FILE_NAME} | Participant {PARTICIPANT}")
 print(f"{'='*70}")
 
 raw = mne.io.read_raw_bdf(file_path, preload=False)
@@ -233,9 +234,12 @@ stimulus_channels = [ch for ch in raw.ch_names if 'Status' in ch or 'STI' in ch]
 raw_p = raw.copy().pick(participant_channels + stimulus_channels)
 
 # -------
-# Step 2: Prepare data (load, filter, resample)
+# Step 2: Filter and resample
 # -------
-print(f"\nData preparation:")
+print(f"\n{'='*70}")
+print("STEP 2/6: FILTER AND RESAMPLE")
+print(f"{'='*70}")
+print(f"Data preparation:")
 raw_p.load_data()
 print(f"  Loaded: {len(raw_p.ch_names)} channels")
 
@@ -246,9 +250,11 @@ print(f"  Resampling: {RESAMPLE_FREQ} Hz")
 raw_p.resample(sfreq=RESAMPLE_FREQ, npad='auto')
 
 # -------
-# Step 3: Apply predefined bad channels and interpolate
+# Step 3: Bad channel interpolation
 # -------
-print(f"\n")
+print(f"\n{'='*70}")
+print("STEP 3/6: BAD CHANNEL INTERPOLATION")
+print(f"{'='*70}")
 
 # Rename channels to remove participant prefix
 channel_mapping = {ch: ch.replace(f'{PARTICIPANT}-', '') for ch in participant_channels}
@@ -276,8 +282,11 @@ else:
     print(f"  No bad channels to interpolate")
 
 # -------
-# Step 4: Find and filter trial events (robust extraction)
+# Step 4: Extract and validate trial events
 # -------
+print(f"\n{'='*70}")
+print("STEP 4/6: EXTRACT AND VALIDATE TRIAL EVENTS")
+print(f"{'='*70}")
 events = mne.find_events(raw_p, stim_channel='Status', shortest_event=1, verbose=False)
 
 # Extract and validate real trial events using robust filtering
@@ -287,7 +296,7 @@ collapsed_events, event_id = extract_real_trial_events(events, raw_p.info['sfreq
 # Step 5: Create epochs
 # -------
 print(f"\n{'='*70}")
-print("EPOCH CREATION")
+print("STEP 5/6: CREATE EPOCHS")
 print(f"{'='*70}")
 
 epochs = mne.Epochs(
@@ -307,10 +316,10 @@ print(f"  Baseline: None (will be applied later if needed)")
 print(f"{'='*70}")
 
 # -------
-# Step 6: Drop predefined bad epochs
+# Step 6: Drop bad epochs
 # -------
 print(f"\n{'='*70}")
-print("DROPPING PREDEFINED BAD EPOCHS")
+print("STEP 6/6: DROP BAD EPOCHS")
 print(f"{'='*70}")
 
 initial_count = len(epochs)
