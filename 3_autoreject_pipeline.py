@@ -31,8 +31,8 @@ from autoreject import AutoReject
 INPUT_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\ica_cleaned"
 OUTPUT_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\preprocessed_final"
 
-PARTICIPANT_ID = 301
-PARTICIPANT = 3
+PARTICIPANT_ID = 302
+PARTICIPANT = 1
 RANDOM_STATE = 97
 
 INPUT_FILE = os.path.join(INPUT_DIR, f"{PARTICIPANT_ID}_p{PARTICIPANT}_ica_cleaned-epo.fif")
