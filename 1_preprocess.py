@@ -280,10 +280,6 @@ else:
 # -------
 # Step 4: Apply common average reference
 # -------
-# IMPORTANT: Average reference is applied here, after bad channel interpolation,
-# following the pipeline order described in the paper. This ensures ICA receives
-# properly referenced data. Do NOT re-apply average reference in the ICA script.
-# -------
 print(f"\n{'='*70}")
 print("STEP 4/7: APPLY COMMON AVERAGE REFERENCE")
 print(f"{'='*70}")
