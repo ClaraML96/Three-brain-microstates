@@ -32,7 +32,7 @@ INPUT_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord
 OUTPUT_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\preprocessed_final"
 
 PARTICIPANT_ID = 302
-PARTICIPANT = 2
+PARTICIPANT = 3
 RANDOM_STATE = 97
 
 INPUT_FILE = os.path.join(INPUT_DIR, f"{PARTICIPANT_ID}_p{PARTICIPANT}_ica_cleaned-epo.fif")
