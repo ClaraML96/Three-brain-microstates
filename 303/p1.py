@@ -344,6 +344,7 @@ print("Mark bad epochs in the interactive window, then close it.")
 
 initial_count = len(epochs)
 
+# This command UPDATES the 'epochs' object in-place when closed
 epochs.plot(
     n_channels=32,
     n_epochs=5,
@@ -351,25 +352,22 @@ epochs.plot(
     block=True
 )
 
-# Collect indices marked during manual inspection
+# The epochs are ALREADY dropped at this point. 
+# We just calculate the indices for your print statement.
 bad_epoch_indices_0based = [
     i for i, reason in enumerate(epochs.drop_log)
-    if len(reason) > 0
+    if any(r == 'USER' for r in reason) # 'USER' is the default tag for manual clicks
 ]
 bad_epoch_indices_1based = [i + 1 for i in bad_epoch_indices_0based]
 
 print(f"\nTrial ID: {trial_id}, Participant: {PARTICIPANT}")
 print(f"Marked bad epochs (1-based): {bad_epoch_indices_1based}")
 
-if bad_epoch_indices_0based:
-    epochs.drop(bad_epoch_indices_0based, reason='MANUAL_BAD', verbose=False)
-    final_count = len(epochs)
-    dropped = initial_count - final_count
-    print(f"Epochs dropped: {dropped}")
-    print(f"Epochs remaining: {final_count}")
-else:
-    print("No bad epochs marked")
-    print(f"Epochs remaining: {initial_count}")
+# REMOVE THE epochs.drop(...) CALL HERE
+final_count = len(epochs)
+dropped = initial_count - final_count
+print(f"Epochs dropped: {dropped}")
+print(f"Epochs remaining: {final_count}")
 print(f"{'='*70}")
 
 # -------
