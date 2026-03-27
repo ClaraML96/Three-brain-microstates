@@ -198,34 +198,35 @@ FILE_NAME = '303.bdf'
 PARTICIPANT = 3
 
 # Processing parameters
-FILTER_LOW = 1.0  # Hz highpass filter
-FILTER_HIGH = 40.0  # Hz lowpass filter
+FILTER_LOW = 1.0  # Hz
+FILTER_HIGH = 40.0  # Hz
 RESAMPLE_FREQ = 512  # Hz
 EPOCH_TMIN = -0.5  # seconds
 EPOCH_TMAX = 5.5  # seconds
 
 # Bad channels and epochs lookup tables
-BAD_CHANNELS_LOOKUP = {
-    (301, 1): [], (301, 2): ['PO3'], (301, 3): [],
-    (302, 1): [], (302, 2): [], (302, 3): [],
-    (303, 1): ['T7', 'TP7'], (303, 2): [], (303, 3): ['FT7', 'FC5', 'T7'],
-    (304, 1): ['T7'], (304, 2): [], (304, 3): [],
-}
+BAD_CHANNELS_LOOKUP = {}
+# BAD_CHANNELS_LOOKUP = {
+#     (301, 1): [], (301, 2): ['P8', 'T8', 'PO3'], (301, 3): ['T8', 'Fp1', 'AF3', 'F7', 'Fp1'],
+#     (302, 1): [], (302, 2): [], (302, 3): [],
+#     (303, 1): ['T7', 'TP7'], (303, 2): [], (303, 3): ['FT7', 'FC5', 'T7'],
+#     (304, 1): ['T7'], (304, 2): [], (304, 3): [],
+# }
 
-BAD_EPOCHS_LOOKUP = {
-    (301, 1): [76], (301, 2): [], (301, 3): [],
-    (302, 1): [80,134,180,265,266], (302, 2): [65,66,91,239], (302, 3): [80,94],
-    (303, 1): [260], (303, 2): [126,209,227,250,266,267,268,275,285,290], (303, 3): [9,119,257,272],
-    (304, 1): [8,12], (304, 2): [50,93,175,265,288], (304, 3): [193,232,234,236,238,242,243,244,268,269,284,289,292],
-}
+BAD_EPOCHS_LOOKUP = {}
+# BAD_EPOCHS_LOOKUP = {
+#     (301, 1): [76], (301, 2): [0,1], (301, 3): [101, 102, 103, 142, 144, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 165, 172, 173, 179, 183, 184, 186, 188, 190, 191, 200, 208, 209, 214, 215, 224, 225, 227, 228, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 243, 250, 251, 252, 278],
+#     (302, 1): [80,134,180,265,266], (302, 2): [65,66,91,239], (302, 3): [80,94],
+#     (303, 1): [260], (303, 2): [126,209,227,250,266,267,268,275,285,290], (303, 3): [9,119,257,272],
+#     (304, 1): [8,12], (304, 2): [50,93,175,265,288], (304, 3): [193,232,234,236,238,242,243,244,268,269,284,289,292],
+# }
 
 # -------
-# Step 1: Load data
+# Step 1: Load and extract participant data
 # -------
 file_path = f"{DATA_PATH}\\{FILE_NAME}"
 print(f"\n{'='*70}")
-print(f"STEP 1/6: LOAD DATA")
-print(f"File: {FILE_NAME} | Participant {PARTICIPANT}")
+print(f"LOADING: {FILE_NAME} | Participant {PARTICIPANT}")
 print(f"{'='*70}")
 
 raw = mne.io.read_raw_bdf(file_path, preload=False)
@@ -234,12 +235,9 @@ stimulus_channels = [ch for ch in raw.ch_names if 'Status' in ch or 'STI' in ch]
 raw_p = raw.copy().pick(participant_channels + stimulus_channels)
 
 # -------
-# Step 2: Filter and resample
+# Step 2: Prepare data (load, filter, resample)
 # -------
-print(f"\n{'='*70}")
-print("STEP 2/6: FILTER AND RESAMPLE")
-print(f"{'='*70}")
-print(f"Data preparation:")
+print(f"\nData preparation:")
 raw_p.load_data()
 print(f"  Loaded: {len(raw_p.ch_names)} channels")
 
@@ -250,11 +248,9 @@ print(f"  Resampling: {RESAMPLE_FREQ} Hz")
 raw_p.resample(sfreq=RESAMPLE_FREQ, npad='auto')
 
 # -------
-# Step 3: Bad channel interpolation
+# Step 3: Apply predefined bad channels and interpolate
 # -------
-print(f"\n{'='*70}")
-print("STEP 3/6: BAD CHANNEL INTERPOLATION")
-print(f"{'='*70}")
+print(f"\n")
 
 # Rename channels to remove participant prefix
 channel_mapping = {ch: ch.replace(f'{PARTICIPANT}-', '') for ch in participant_channels}
@@ -282,11 +278,8 @@ else:
     print(f"  No bad channels to interpolate")
 
 # -------
-# Step 4: Extract and validate trial events
+# Step 4: Find and filter trial events (robust extraction)
 # -------
-print(f"\n{'='*70}")
-print("STEP 4/6: EXTRACT AND VALIDATE TRIAL EVENTS")
-print(f"{'='*70}")
 events = mne.find_events(raw_p, stim_channel='Status', shortest_event=1, verbose=False)
 
 # Extract and validate real trial events using robust filtering
@@ -296,7 +289,7 @@ collapsed_events, event_id = extract_real_trial_events(events, raw_p.info['sfreq
 # Step 5: Create epochs
 # -------
 print(f"\n{'='*70}")
-print("STEP 5/6: CREATE EPOCHS")
+print("EPOCH CREATION")
 print(f"{'='*70}")
 
 epochs = mne.Epochs(
@@ -316,10 +309,10 @@ print(f"  Baseline: None (will be applied later if needed)")
 print(f"{'='*70}")
 
 # -------
-# Step 6: Drop bad epochs
+# Step 6: Drop predefined bad epochs
 # -------
 print(f"\n{'='*70}")
-print("STEP 6/6: DROP BAD EPOCHS")
+print("DROPPING PREDEFINED BAD EPOCHS")
 print(f"{'='*70}")
 
 initial_count = len(epochs)
@@ -339,6 +332,42 @@ else:
     print(f"\nNo predefined bad epochs to drop")
     print(f"Epochs remaining: {initial_count}")
 
+print(f"{'='*70}")
+
+# -------
+# Step 6: Manual bad-epoch search
+# -------
+print(f"\n{'='*70}")
+print("MANUAL BAD-EPOCH SEARCH")
+print(f"{'='*70}")
+print("Mark bad epochs in the interactive window, then close it.")
+
+initial_count = len(epochs)
+
+# This command UPDATES the 'epochs' object in-place when closed
+epochs.plot(
+    n_channels=32,
+    n_epochs=5,
+    scalings=dict(eeg=50e-6),
+    block=True
+)
+
+# The epochs are ALREADY dropped at this point. 
+# We just calculate the indices for your print statement.
+bad_epoch_indices_0based = [
+    i for i, reason in enumerate(epochs.drop_log)
+    if any(r == 'USER' for r in reason) # 'USER' is the default tag for manual clicks
+]
+bad_epoch_indices_1based = [i + 1 for i in bad_epoch_indices_0based]
+
+print(f"\nTrial ID: {trial_id}, Participant: {PARTICIPANT}")
+print(f"Marked bad epochs (1-based): {bad_epoch_indices_1based}")
+
+# REMOVE THE epochs.drop(...) CALL HERE
+final_count = len(epochs)
+dropped = initial_count - final_count
+print(f"Epochs dropped: {dropped}")
+print(f"Epochs remaining: {final_count}")
 print(f"{'='*70}")
 
 # -------
