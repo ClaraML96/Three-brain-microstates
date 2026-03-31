@@ -99,7 +99,7 @@ PALETTE = {
 ALPHA_FILL = 0.18
 
 # ============================================================
-# HELPERS — DATA UTILITIES
+# DATA UTILITIES
 # ============================================================
 
 def load_cleaned_epochs(data_dir: str, participant_id: str, session: int) -> mne.Epochs:
@@ -234,7 +234,7 @@ def compute_erp_stats(data: np.ndarray, error_type: str = "se", smooth_sigma: fl
 
 
 # ============================================================
-# HELPERS — PLOTTING UTILITIES
+# PLOTTING UTILITIES
 # ============================================================
 
 # Shared publication style
