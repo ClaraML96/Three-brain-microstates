@@ -42,29 +42,6 @@ PARTICIPANTS = [
     ("304", 1), ("304", 2), ("304", 3),
 ]
 
-# ── Condition → Condition_X mapping ─────────────────────────────────────────
-#
-# Your preprocessing script collapses raw two-digit trigger codes to their
-# SECOND digit (original_code % 10), saving epochs named "Condition_1" …
-# "Condition_10".
-#
-# Fill in which Condition_N integers belong to each ERP cell.
-# A condition can map to MULTIPLE integers — those epochs will be pooled.
-#
-# HOW TO FIND THE RIGHT NUMBERS
-# Run the script once and read the printout:
-#
-#   Event IDs found in this file:
-#        1  →  'Condition_1'  (28 epochs)
-#        2  →  'Condition_2'  (30 epochs)  ...
-#
-# Cross-reference with your experiment design, then update the lists below.
-#
-#   Original two-digit triggers (before collapsing):
-#     10–19  →  Condition_0 (or 10)   |   20–29  →  Condition_2 (or 0)
-#   The exact mapping depends on what numbers your paradigm actually sent.
-# ─────────────────────────────────────────────────────────────────────────────
-
 CONDITION_MAP = {
     "with_feedback/solo":    [1],   # Condition_1 → T1P  (30 epochs ✓)
     "with_feedback/trio":    [3],   # Condition_3 → T3P  (30 epochs ✓)
