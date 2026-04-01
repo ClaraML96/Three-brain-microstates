@@ -98,11 +98,6 @@ print(f"\n{'='*70}")
 print("STEP 3/6: MANUAL VISUAL INSPECTION")
 print(f"{'='*70}")
 print("Methodology note:")
-print(
-    "  Using AutoReject this late in the pipeline (after ICA) can produce "
-    "false positives if the signal is already clean. The reject_log is used "
-    "as a visual guide only — no automatic dropping is performed."
-)
 print("\nOpening reject_log visualization (bad epochs highlighted in red)...")
 reject_log.plot_epochs(epochs)
 print("Opening interactive epoch browser...")
