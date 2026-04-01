@@ -1,28 +1,41 @@
 """
 ERP Analysis Pipeline — EEG Feedback × Group Conditions
 ========================================================
-Generates publication-ready ERP plots per participant, comparing:
-  - Feedback: with_feedback vs without_feedback
-  - Group:    solo vs trio
+Two-level averaging structure:
+  Level 1 — per participant: average across trials → one ERP waveform per
+             participant per condition
+  Level 2 — grand average:  average those waveforms across participants →
+             one group-level ERP per condition, with SE / 95% CI across
+             participants (not trials)
+
+Conditions compared:
+  - with_feedback/solo    (T1P)
+  - with_feedback/trio    (T3P)
+  - without_feedback/solo (T1Pn)
+  - without_feedback/trio (T3Pn)
 
 Channels of interest:
-  - Occipital (average of O1, O2, Oz)
-  - Motor (C3, analyzed separately)
+  - Occipital: O1, O2, Oz  (averaged into one signal)
+  - Motor:     C3           (single channel)
 
-Usage
------
-  python erp_analysis.py
-
-Configure the paths and participant list in the CONFIGURATION section.
+Output per run
+--------------
+  figures/erp/
+    per_participant/
+      {id}_p{s}_erp_combined.png   <- per-participant 2x2 overview
+    grand_average/
+      grand_avg_occipital_solo_vs_trio.png
+      grand_avg_motor_solo_vs_trio.png
+      grand_avg_occipital_feedback.png
+      grand_avg_motor_feedback.png
+      grand_avg_combined.png       <- 2x2: rows = channel, cols = feedback
 """
 
 import os
 import numpy as np
 import matplotlib
-matplotlib.use("Agg")               # non-interactive backend; change to "TkAgg" for pop-up windows
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-from matplotlib.patches import Patch
 import mne
 from scipy.ndimage import gaussian_filter1d
 
@@ -30,11 +43,9 @@ from scipy.ndimage import gaussian_filter1d
 # CONFIGURATION
 # ============================================================
 
-DATA_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\ica_cleaned"
+DATA_DIR   = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\ica_cleaned"
 OUTPUT_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\figures\erp"
 
-# Define all participants to process. Each entry is (participant_id, session).
-# Add as many as needed.
 PARTICIPANTS = [
     ("301", 1), ("301", 2), ("301", 3),
     ("302", 1), ("302", 2), ("302", 3),
@@ -42,331 +53,379 @@ PARTICIPANTS = [
     ("304", 1), ("304", 2), ("304", 3),
 ]
 
+# Condition_id -> experimental cell (decoded from Force_df)
 CONDITION_MAP = {
-    "with_feedback/solo":    [1],   # Condition_1 → T1P  (30 epochs ✓)
-    "with_feedback/trio":    [3],   # Condition_3 → T3P  (30 epochs ✓)
-    "without_feedback/solo": [2],   # Condition_2 → T1Pn (29 epochs ✓)
-    "without_feedback/trio": [4],   # Condition_4 → T3Pn (29 epochs ✓)
+    "with_feedback/solo":    [1],   # T1P
+    "with_feedback/trio":    [3],   # T3P
+    "without_feedback/solo": [2],   # T1Pn
+    "without_feedback/trio": [4],   # T3Pn
 }
-
-# Leave this alias as-is — it is passed into process_participant()
 EVENT_ID = CONDITION_MAP
 
-# Channels of interest
 OCCIPITAL_CHANNELS = ["O1", "O2", "Oz"]
 MOTOR_CHANNEL      = "C3"
 
-# Epoch time window (should match your data)
-TMIN, TMAX = -0.5, 5.5
+TMIN, TMAX   = -0.5, 5.5
+BASELINE     = (-0.5, 0.0)   # seconds; set to None to skip
+SMOOTH_SIGMA = 5              # Gaussian smoothing in samples (0 = off)
+ERROR_TYPE   = "se"           # "se" or "ci95"
 
-# Baseline correction window (seconds). Set to None to skip.
-BASELINE = (-0.5, 0.0)
+# Minimum trials a participant must have in a condition to be included
+# in the grand average for that condition.
+MIN_TRIALS = 10
 
-# Smoothing sigma (in samples). Set to 0 to disable.
-SMOOTH_SIGMA = 5
-
-# Error band: "se" (standard error) or "ci95" (95% confidence interval)
-ERROR_TYPE = "se"
-
-# Visual style
 PALETTE = {
-    "solo": "#2271B5",   # blue
-    "trio": "#E65F2B",   # orange
+    "solo":             "#2271B5",
+    "trio":             "#E65F2B",
+    "with_feedback":    "#1B7837",
+    "without_feedback": "#762A83",
 }
 ALPHA_FILL = 0.18
+
+# ============================================================
+# PUBLICATION STYLE
+# ============================================================
+
+STYLE = {
+    "font.family":      "serif",
+    "font.serif":       ["Georgia", "Times New Roman", "DejaVu Serif"],
+    "axes.spines.top":  False,
+    "axes.spines.right":False,
+    "axes.linewidth":   0.9,
+    "axes.labelsize":   11,
+    "axes.titlesize":   12,
+    "xtick.labelsize":  9,
+    "ytick.labelsize":  9,
+    "legend.fontsize":  9,
+    "legend.frameon":   False,
+    "figure.dpi":       150,
+    "savefig.dpi":      300,
+    "savefig.bbox":     "tight",
+}
 
 # ============================================================
 # DATA UTILITIES
 # ============================================================
 
-def load_cleaned_epochs(data_dir: str, participant_id: str, session: int) -> mne.Epochs:
-    """Load ICA-cleaned epochs for one participant/session."""
+def load_cleaned_epochs(data_dir, participant_id, session):
+    """Load ICA-cleaned epochs and attach standard 10-20 montage."""
     fname = os.path.join(data_dir, f"{participant_id}_p{session}_ica_cleaned-epo.fif")
     if not os.path.exists(fname):
         raise FileNotFoundError(f"Epoch file not found: {fname}")
     epochs = mne.read_epochs(fname, preload=True, verbose=False)
-    # Apply standard montage for channel positions
     montage = mne.channels.make_standard_montage("standard_1020")
     epochs.set_montage(montage, on_missing="ignore")
-    print(f"  Loaded {len(epochs)} epochs — {participant_id} session {session}")
     return epochs
 
 
-def select_condition(epochs: mne.Epochs, condition_key: str, event_id: dict) -> mne.Epochs:
-    """
-    Return the subset of epochs matching a condition key.
-
-    Parameters
-    ----------
-    epochs       : mne.Epochs — full epoch object
-    condition_key: str        — e.g. "with_feedback/solo"
-    event_id     : dict       — maps condition keys to a list of Condition_N
-                               integers, e.g. {"with_feedback/solo": [1, 2]}
-
-    Strategy
-    --------
-    The saved epoch file uses names like "Condition_1", "Condition_2", etc.
-    We look up the list of integers for this key, build the corresponding
-    "Condition_N" string keys, and use MNE's string selector to pool epochs.
-    """
-    condition_ids = event_id.get(condition_key)
+def select_condition(epochs, condition_key, event_id):
+    """Return epochs matching a condition key (pools multiple Condition_N ids)."""
+    condition_ids  = event_id.get(condition_key)
     if condition_ids is None:
-        raise KeyError(f"Condition '{condition_key}' not found in CONDITION_MAP.")
-
-    # Build MNE-compatible string keys: [1, 2] -> ["Condition_1", "Condition_2"]
-    mne_keys = [f"Condition_{i}" for i in condition_ids]
-
-    # Keep only keys that exist in this file (some may be absent after bad-epoch removal)
+        raise KeyError(f"'{condition_key}' not in CONDITION_MAP.")
+    mne_keys       = [f"Condition_{i}" for i in condition_ids]
     available_keys = [k for k in mne_keys if k in epochs.event_id]
-
     if not available_keys:
-        # Return an empty slice; the caller's len() == 0 guard will catch this
-        return epochs[epochs.events[:, 2] == -1]
-
+        return epochs[epochs.events[:, 2] == -1]   # guaranteed empty
     return epochs[available_keys]
 
-def get_occipital_erp(epochs: mne.Epochs, channels: list[str], baseline: tuple | None) -> tuple:
+
+def extract_channel_data(epochs, channels, baseline):
     """
-    Average occipital channels and return (times, erp_matrix).
+    Extract and baseline-correct channel data from epochs.
 
     Parameters
     ----------
     epochs   : mne.Epochs
-    channels : list of channel names to average
-    baseline : (tmin, tmax) for baseline correction, or None
+    channels : str or list[str]
+    baseline : (tmin, tmax) or None
 
     Returns
     -------
-    times : ndarray (n_times,)
-    data  : ndarray (n_trials, n_times)  — averaged across channels
+    times : (n_times,)
+    data  : (n_trials, n_times) -- averaged across channels if list given
     """
+    if isinstance(channels, str):
+        channels = [channels]
+
     available = [ch for ch in channels if ch in epochs.ch_names]
     if not available:
-        raise ValueError(f"None of {channels} found in epochs. Available: {epochs.ch_names}")
+        raise ValueError(f"None of {channels} found. Available: {epochs.ch_names[:10]}")
 
     picks = mne.pick_channels(epochs.ch_names, include=available)
-    data  = epochs.get_data(picks=picks)          # (n_trials, n_channels, n_times)
-    data  = data.mean(axis=1)                     # average across channels → (n_trials, n_times)
+    data  = epochs.get_data(picks=picks)      # (n_trials, n_ch, n_times)
+    data  = data.mean(axis=1)                 # -> (n_trials, n_times)
 
     if baseline is not None:
         tmin_bl, tmax_bl = baseline
         bl_mask = (epochs.times >= tmin_bl) & (epochs.times <= tmax_bl)
-        data = data - data[:, bl_mask].mean(axis=1, keepdims=True)
+        data    = data - data[:, bl_mask].mean(axis=1, keepdims=True)
 
     return epochs.times, data
 
 
-def get_single_channel_erp(epochs: mne.Epochs, channel: str, baseline: tuple | None) -> tuple:
+# ============================================================
+# GRAND AVERAGE UTILITIES
+# ============================================================
+
+def compute_grand_average(participant_erps):
     """
-    Extract a single channel's data, returning (times, erp_matrix).
-
-    Returns
-    -------
-    times : ndarray (n_times,)
-    data  : ndarray (n_trials, n_times)
-    """
-    if channel not in epochs.ch_names:
-        raise ValueError(f"Channel '{channel}' not found. Available: {epochs.ch_names}")
-
-    picks = mne.pick_channels(epochs.ch_names, include=[channel])
-    data  = epochs.get_data(picks=picks).squeeze(axis=1)  # (n_trials, n_times)
-
-    if baseline is not None:
-        tmin_bl, tmax_bl = baseline
-        bl_mask = (epochs.times >= tmin_bl) & (epochs.times <= tmax_bl)
-        data = data - data[:, bl_mask].mean(axis=1, keepdims=True)
-
-    return epochs.times, data
-
-
-def compute_erp_stats(data: np.ndarray, error_type: str = "se", smooth_sigma: float = 0) -> dict:
-    """
-    Compute mean ± error band from trial matrix.
+    Compute grand average and cross-participant variability.
 
     Parameters
     ----------
-    data         : (n_trials, n_times)
-    error_type   : "se" → standard error; "ci95" → 95% CI (1.96 × SE)
-    smooth_sigma : Gaussian smoothing sigma in samples (0 = off)
+    participant_erps : list of (n_times,) arrays
+        One trial-averaged ERP waveform per participant.
 
     Returns
     -------
-    dict with keys: mean, lower, upper, n_trials
+    dict with keys: mean, lower, upper, n_participants
     """
-    n = data.shape[0]
-    # Use nanmean/nanstd so NaN-filled placeholders (missing conditions) don't crash
-    mean = np.nanmean(data, axis=0)
-    se   = np.nanstd(data, axis=0, ddof=1) / np.sqrt(n)
-    ci   = 1.96 * se if error_type == "ci95" else se
+    stack = np.array(participant_erps)          # (n_participants, n_times)
+    n     = stack.shape[0]
+    mean  = stack.mean(axis=0)
+    se    = stack.std(axis=0, ddof=1) / np.sqrt(n)
+    ci    = 1.96 * se if ERROR_TYPE == "ci95" else se
 
-    if smooth_sigma > 0:
-        mean  = gaussian_filter1d(mean,       smooth_sigma)
-        lower = gaussian_filter1d(mean - ci,  smooth_sigma)
-        upper = gaussian_filter1d(mean + ci,  smooth_sigma)
+    if SMOOTH_SIGMA > 0:
+        mean  = gaussian_filter1d(mean,       SMOOTH_SIGMA)
+        lower = gaussian_filter1d(mean - ci,  SMOOTH_SIGMA)
+        upper = gaussian_filter1d(mean + ci,  SMOOTH_SIGMA)
     else:
         lower = mean - ci
         upper = mean + ci
 
-    return {"mean": mean, "lower": lower, "upper": upper, "n_trials": n}
+    return {"mean": mean, "lower": lower, "upper": upper, "n_participants": n}
 
 
 # ============================================================
 # PLOTTING UTILITIES
 # ============================================================
 
-# Shared publication style
-STYLE = {
-    "font.family":        "serif",
-    "font.serif":         ["Georgia", "Times New Roman", "DejaVu Serif"],
-    "axes.spines.top":    False,
-    "axes.spines.right":  False,
-    "axes.linewidth":     0.9,
-    "axes.labelsize":     11,
-    "axes.titlesize":     12,
-    "xtick.labelsize":    9,
-    "ytick.labelsize":    9,
-    "legend.fontsize":    9,
-    "legend.frameon":     False,
-    "figure.dpi":         150,
-    "savefig.dpi":        300,
-    "savefig.bbox":       "tight",
-}
+def _annotation():
+    band = ("SE (across participants)"
+            if ERROR_TYPE == "se" else "95% CI (across participants)")
+    return (f"Shaded region: +/- {band}   |   "
+            f"Baseline: {BASELINE[0]} to {BASELINE[1]} s   |   "
+            f"Smoothing sigma={SMOOTH_SIGMA} samples")
 
 
-def _draw_erp_axes(ax, times, stats_solo, stats_trio, title, palette, alpha_fill,
-                   show_xlabel=True, show_legend=True):
+def _draw_grand_avg_axes(ax, times, stats_a, stats_b,
+                         label_a, label_b, color_a, color_b,
+                         title, show_xlabel=True, show_legend=True):
     """
-    Draw two ERP lines (solo + trio) with error bands onto an existing Axes.
-
-    Parameters are pre-computed stats dicts from compute_erp_stats().
+    Draw two grand-average ERP lines with cross-participant error bands.
+    stats_a / stats_b come from compute_grand_average().
     """
-    for label, stats in [("Solo", stats_solo), ("Trio", stats_trio)]:
-        color = palette[label.lower()]
+    for stats, label, color in [
+        (stats_a, label_a, color_a),
+        (stats_b, label_b, color_b),
+    ]:
+        n = stats["n_participants"]
         ax.plot(times, stats["mean"] * 1e6,
-                color=color, linewidth=1.6, label=f"{label}  (n={stats['n_trials']})")
+                color=color, linewidth=2.0,
+                label=f"{label}  (n={n})")
         ax.fill_between(times,
                         stats["lower"] * 1e6,
                         stats["upper"] * 1e6,
-                        color=color, alpha=alpha_fill)
+                        color=color, alpha=ALPHA_FILL)
 
-    # Stimulus onset line
     ax.axvline(0, color="black", linewidth=0.8, linestyle="--", alpha=0.5)
     ax.axhline(0, color="grey",  linewidth=0.5, linestyle="-",  alpha=0.3)
-
-    # Invert y-axis (EEG convention: negative up)
     ax.invert_yaxis()
-
     ax.set_title(title, fontweight="bold", pad=8)
     if show_xlabel:
         ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Amplitude (µV)")
-
+    ax.set_ylabel("Amplitude (uV)")
     if show_legend:
         ax.legend(loc="upper right")
 
 
-def plot_erp_figure(times, condition_data: dict, channel_label: str,
-                    participant_id: str, palette: dict, alpha_fill: float,
-                    error_type: str, smooth_sigma: float) -> plt.Figure:
+def plot_grand_avg_figure(times, grand_avg, channel_label, comparison="solo_vs_trio"):
     """
-    Build a publication-ready figure with two panels:
-      Left  — WITH feedback (solo vs trio)
-      Right — WITHOUT feedback (solo vs trio)
+    Two-panel grand average figure.
 
-    Parameters
-    ----------
-    condition_data : dict with keys
-        "with_feedback/solo", "with_feedback/trio",
-        "without_feedback/solo", "without_feedback/trio"
-        each mapping to a (n_trials, n_times) array
+    comparison="solo_vs_trio"
+        Left panel  = with feedback,    solo vs trio
+        Right panel = without feedback, solo vs trio
 
-    Returns
-    -------
-    matplotlib Figure
+    comparison="feedback"
+        Left panel  = solo,  with vs without feedback
+        Right panel = trio,  with vs without feedback
     """
     with plt.rc_context(STYLE):
-        fig, axes = plt.subplots(1, 2, figsize=(12, 4.5), sharey=True)
-        fig.suptitle(
-            f"ERP — {channel_label}  ·  Participant {participant_id}",
-            fontsize=14, fontweight="bold", y=1.02
-        )
+        fig, axes = plt.subplots(1, 2, figsize=(13, 4.5), sharey=True)
 
-        for ax, feedback_key, panel_title in [
-            (axes[0], "with_feedback",    "With Feedback"),
-            (axes[1], "without_feedback", "Without Feedback"),
-        ]:
-            stats_solo = compute_erp_stats(
-                condition_data[f"{feedback_key}/solo"], error_type, smooth_sigma)
-            stats_trio = compute_erp_stats(
-                condition_data[f"{feedback_key}/trio"], error_type, smooth_sigma)
+        if comparison == "solo_vs_trio":
+            fig.suptitle(f"Grand Average ERP -- {channel_label}  |  Solo vs Trio",
+                         fontsize=14, fontweight="bold", y=1.02)
+            panels = [
+                (axes[0], "with_feedback",    "With Feedback"),
+                (axes[1], "without_feedback", "Without Feedback"),
+            ]
+            for ax, fb_key, panel_title in panels:
+                _draw_grand_avg_axes(
+                    ax, times,
+                    grand_avg[f"{fb_key}/solo"],
+                    grand_avg[f"{fb_key}/trio"],
+                    label_a="Solo", label_b="Trio",
+                    color_a=PALETTE["solo"], color_b=PALETTE["trio"],
+                    title=panel_title,
+                    show_xlabel=True,
+                    show_legend=(ax is axes[0]),
+                )
+            axes[1].legend(loc="upper right")
 
-            _draw_erp_axes(
-                ax, times,
-                stats_solo, stats_trio,
-                title=panel_title,
-                palette=palette,
-                alpha_fill=alpha_fill,
-                show_xlabel=True,
-                show_legend=(ax is axes[0]),
-            )
+        elif comparison == "feedback":
+            fig.suptitle(
+                f"Grand Average ERP -- {channel_label}  |  With vs Without Feedback",
+                fontsize=14, fontweight="bold", y=1.02)
+            panels = [
+                (axes[0], "solo", "Solo"),
+                (axes[1], "trio", "Trio"),
+            ]
+            for ax, grp_key, panel_title in panels:
+                _draw_grand_avg_axes(
+                    ax, times,
+                    grand_avg[f"with_feedback/{grp_key}"],
+                    grand_avg[f"without_feedback/{grp_key}"],
+                    label_a="With Feedback", label_b="Without Feedback",
+                    color_a=PALETTE["with_feedback"],
+                    color_b=PALETTE["without_feedback"],
+                    title=panel_title,
+                    show_xlabel=True,
+                    show_legend=(ax is axes[0]),
+                )
+            axes[1].legend(loc="upper right")
 
-        # Shared legend on right panel as well
-        axes[1].legend(loc="upper right")
-
-        # Error-band annotation
-        band_label = "± SE" if error_type == "se" else "± 95% CI"
-        fig.text(0.5, -0.04,
-                 f"Shaded region: {band_label}   ·   Baseline: {BASELINE[0]}–{BASELINE[1]} s   ·   Smoothing σ={smooth_sigma} samples",
+        fig.text(0.5, -0.04, _annotation(),
                  ha="center", fontsize=8, color="grey", style="italic")
-
         fig.tight_layout()
     return fig
 
 
-def plot_combined_figure(times, occ_data: dict, motor_data: dict,
-                         participant_id: str, palette: dict,
-                         alpha_fill: float, error_type: str,
-                         smooth_sigma: float) -> plt.Figure:
+def plot_grand_avg_combined(times, grand_avg_occ, grand_avg_motor):
     """
-    Optional combined figure: 2 rows × 2 columns.
-      Row 1 — Occipital (O1/O2/Oz average)
-      Row 2 — Motor (C3)
-    Columns: with_feedback | without_feedback
+    2x2 combined grand average figure.
+      Rows    : occipital | motor
+      Columns : with_feedback | without_feedback
+    Solo vs trio shown in each panel.
     """
+    with plt.rc_context(STYLE):
+        fig, axes = plt.subplots(2, 2, figsize=(14, 8), sharey="row")
+        fig.suptitle("Grand Average ERP Overview  |  Solo vs Trio",
+                     fontsize=14, fontweight="bold", y=1.02)
+
+        row_data = [
+            (grand_avg_occ,   f"Occipital ({', '.join(OCCIPITAL_CHANNELS)} avg)"),
+            (grand_avg_motor, f"Motor ({MOTOR_CHANNEL})"),
+        ]
+        col_data = [
+            ("with_feedback",    "With Feedback"),
+            ("without_feedback", "Without Feedback"),
+        ]
+
+        for row, (grand_avg, row_label) in enumerate(row_data):
+            for col, (fb_key, panel_title) in enumerate(col_data):
+                ax = axes[row][col]
+                _draw_grand_avg_axes(
+                    ax, times,
+                    grand_avg[f"{fb_key}/solo"],
+                    grand_avg[f"{fb_key}/trio"],
+                    label_a="Solo", label_b="Trio",
+                    color_a=PALETTE["solo"], color_b=PALETTE["trio"],
+                    title=panel_title if row == 0 else "",
+                    show_xlabel=(row == 1),
+                    show_legend=(row == 0 and col == 0),
+                )
+                if col == 0:
+                    ax.set_ylabel(f"{row_label}\nAmplitude (uV)")
+
+        fig.text(0.5, -0.02, _annotation(),
+                 ha="center", fontsize=8, color="grey", style="italic")
+        fig.tight_layout()
+    return fig
+
+
+# ============================================================
+# PER-PARTICIPANT PLOT
+# ============================================================
+
+def _draw_trial_axes(ax, times, stats_solo, stats_trio, title,
+                     show_xlabel=True, show_legend=True):
+    """Draw per-participant ERP axes (SE across trials)."""
+    for label, stats, color in [
+        ("Solo", stats_solo, PALETTE["solo"]),
+        ("Trio", stats_trio, PALETTE["trio"]),
+    ]:
+        ax.plot(times, stats["mean"] * 1e6,
+                color=color, linewidth=1.6,
+                label=f"{label}  (n={stats['n_trials']} trials)")
+        ax.fill_between(times,
+                        stats["lower"] * 1e6,
+                        stats["upper"] * 1e6,
+                        color=color, alpha=ALPHA_FILL)
+    ax.axvline(0, color="black", linewidth=0.8, linestyle="--", alpha=0.5)
+    ax.axhline(0, color="grey",  linewidth=0.5, linestyle="-",  alpha=0.3)
+    ax.invert_yaxis()
+    ax.set_title(title, fontweight="bold", pad=8)
+    if show_xlabel:
+        ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Amplitude (uV)")
+    if show_legend:
+        ax.legend(loc="upper right")
+
+
+def compute_trial_stats(data):
+    """Mean +/- SE across trials (for per-participant plots)."""
+    n    = data.shape[0]
+    mean = np.nanmean(data, axis=0)
+    se   = np.nanstd(data, axis=0, ddof=1) / np.sqrt(n)
+    ci   = 1.96 * se if ERROR_TYPE == "ci95" else se
+    if SMOOTH_SIGMA > 0:
+        mean  = gaussian_filter1d(mean,       SMOOTH_SIGMA)
+        lower = gaussian_filter1d(mean - ci,  SMOOTH_SIGMA)
+        upper = gaussian_filter1d(mean + ci,  SMOOTH_SIGMA)
+    else:
+        lower, upper = mean - ci, mean + ci
+    return {"mean": mean, "lower": lower, "upper": upper, "n_trials": n}
+
+
+def plot_participant_combined(times, occ_data, motor_data, participant_id, session):
+    """2x2 per-participant overview (SE across trials, not participants)."""
     with plt.rc_context(STYLE):
         fig, axes = plt.subplots(2, 2, figsize=(13, 8), sharey="row")
         fig.suptitle(
-            f"ERP Overview — Participant {participant_id}",
-            fontsize=14, fontweight="bold", y=1.02
-        )
+            f"ERP -- Participant {participant_id}  Session {session}  "
+            f"[variability = SE across trials]",
+            fontsize=13, fontweight="bold", y=1.02)
 
-        for row, (data_dict, row_label) in enumerate(
-            [(occ_data, "Occipital (O1/O2/Oz avg)"),
-             (motor_data, f"Motor ({MOTOR_CHANNEL})")]):
-
-            for col, (feedback_key, panel_title) in enumerate(
+        row_items = [
+            (occ_data,   f"Occipital ({', '.join(OCCIPITAL_CHANNELS)} avg)"),
+            (motor_data, f"Motor ({MOTOR_CHANNEL})"),
+        ]
+        for row, (data_dict, row_label) in enumerate(row_items):
+            for col, (fb_key, panel_title) in enumerate(
                 [("with_feedback",    "With Feedback"),
-                 ("without_feedback", "Without Feedback")]):
-
+                 ("without_feedback", "Without Feedback")]
+            ):
                 ax = axes[row][col]
-                stats_solo = compute_erp_stats(
-                    data_dict[f"{feedback_key}/solo"], error_type, smooth_sigma)
-                stats_trio = compute_erp_stats(
-                    data_dict[f"{feedback_key}/trio"], error_type, smooth_sigma)
-
-                _draw_erp_axes(
-                    ax, times,
-                    stats_solo, stats_trio,
+                s_solo = compute_trial_stats(data_dict[f"{fb_key}/solo"])
+                s_trio = compute_trial_stats(data_dict[f"{fb_key}/trio"])
+                _draw_trial_axes(
+                    ax, times, s_solo, s_trio,
                     title=panel_title if row == 0 else "",
-                    palette=palette,
-                    alpha_fill=alpha_fill,
                     show_xlabel=(row == 1),
-                    show_legend=(col == 0 and row == 0),
+                    show_legend=(row == 0 and col == 0),
                 )
-
                 if col == 0:
-                    ax.set_ylabel(f"{row_label}\nAmplitude (µV)")
+                    ax.set_ylabel(f"{row_label}\nAmplitude (uV)")
 
+        fig.text(0.5, -0.02,
+                 f"Shaded region: +/- SE (across trials)   |   "
+                 f"Baseline: {BASELINE[0]} to {BASELINE[1]} s   |   "
+                 f"Smoothing sigma={SMOOTH_SIGMA} samples",
+                 ha="center", fontsize=8, color="grey", style="italic")
         fig.tight_layout()
     return fig
 
@@ -375,104 +434,172 @@ def plot_combined_figure(times, occ_data: dict, motor_data: dict,
 # MAIN PIPELINE
 # ============================================================
 
-def process_participant(participant_id: str, session: int,
-                        data_dir: str, output_dir: str,
-                        event_id: dict, occ_channels: list,
-                        motor_channel: str, baseline: tuple | None,
-                        error_type: str, smooth_sigma: float,
-                        palette: dict, alpha_fill: float):
+def run_pipeline():
     """
-    Full ERP pipeline for one participant:
-      1) Load ICA-cleaned epochs
-      2) Select condition subsets
-      3) Extract channel data + baseline correction
-      4) Generate and save ERP figures
+    Two-pass pipeline.
+
+    Pass 1 -- per participant
+        For each participant/session:
+          - Load ICA-cleaned epochs
+          - For each condition, extract channel data and baseline-correct
+          - Compute trial-level SE for per-participant plot
+          - Compute trial average (Level 1) and store for grand average
+          - Save per-participant combined plot
+
+    Pass 2 -- grand average
+        For each condition:
+          - Stack trial averages across participants
+          - Compute mean +/- SE across participants (Level 2)
+        Save all grand average figures.
     """
-    print(f"\n{'='*60}")
-    print(f"  Participant {participant_id}  ·  Session {session}")
-    print(f"{'='*60}")
 
-    # --- Load ---
-    epochs = load_cleaned_epochs(data_dir, participant_id, session)
+    per_participant_dir = os.path.join(OUTPUT_DIR, "per_participant")
+    grand_avg_dir       = os.path.join(OUTPUT_DIR, "grand_average")
+    os.makedirs(per_participant_dir, exist_ok=True)
+    os.makedirs(grand_avg_dir,       exist_ok=True)
 
-    # Always print actual event IDs found in the file so the user can
-    # verify / update the EVENT_ID dict at the top of the script.
-    print(f"\n  Event IDs found in this file:")
-    for name, eid in sorted(epochs.event_id.items(), key=lambda x: x[1]):
-        count = np.sum(epochs.events[:, 2] == eid)
-        print(f"    {eid:>6}  →  '{name}'  ({count} epochs)")
+    # Collect Level-1 averages: one waveform per participant per condition
+    participant_erps_occ   = {k: [] for k in CONDITION_MAP}
+    participant_erps_motor = {k: [] for k in CONDITION_MAP}
+    times_ref = None
 
-    # times is derived from the full epoch object — always available,
-    # regardless of whether individual conditions have trials.
-    times = epochs.times
+    # ------------------------------------------------------------------
+    # PASS 1: Per-participant
+    # ------------------------------------------------------------------
+    print("\nPASS 1 -- PER-PARTICIPANT ERPs")
+    print("=" * 60)
 
-    # --- Condition data containers ---
-    occ_data   = {}   # keyed by "feedback_type/group"
-    motor_data = {}
+    for pid, session in PARTICIPANTS:
+        label = f"{pid} p{session}"
+        print(f"\n  {label}")
+        print(f"  {'-' * 40}")
 
-    for condition_key in event_id.keys():
-        cond_epochs = select_condition(epochs, condition_key, event_id)
-
-        if len(cond_epochs) == 0:
-            print(f"  ⚠  No epochs for '{condition_key}' — "
-                  f"check EVENT_ID dict matches the event IDs printed above")
-            # Fill with NaN so flat zero lines don't mislead in plots
-            n_times = len(times)
-            occ_data[condition_key]   = np.full((1, n_times), np.nan)
-            motor_data[condition_key] = np.full((1, n_times), np.nan)
+        try:
+            epochs = load_cleaned_epochs(DATA_DIR, pid, session)
+        except FileNotFoundError as e:
+            print(f"  X  Skipped: {e}")
             continue
 
-        _, occ   = get_occipital_erp(cond_epochs, occ_channels, baseline)
-        _, motor = get_single_channel_erp(cond_epochs, motor_channel, baseline)
+        if times_ref is None:
+            times_ref = epochs.times
 
-        occ_data[condition_key]   = occ
-        motor_data[condition_key] = motor
-        print(f"  {condition_key}: {len(cond_epochs)} trials")
+        occ_data   = {}
+        motor_data = {}
 
-    # --- Output directory ---
-    os.makedirs(output_dir, exist_ok=True)
-    subj_dir = os.path.join(output_dir, f"{participant_id}_p{session}")
-    os.makedirs(subj_dir, exist_ok=True)
+        for condition_key in CONDITION_MAP:
+            cond_epochs = select_condition(epochs, condition_key, EVENT_ID)
+            n = len(cond_epochs)
 
-    # --- Plot 1: Occipital ERP per feedback condition ---
-    fig_occ = plot_erp_figure(
-        times, occ_data,
-        channel_label=f"Occipital ({', '.join(occ_channels)} avg)",
-        participant_id=participant_id,
-        palette=palette, alpha_fill=alpha_fill,
-        error_type=error_type, smooth_sigma=smooth_sigma,
-    )
-    occ_path = os.path.join(subj_dir, f"{participant_id}_p{session}_erp_occipital.png")
-    fig_occ.savefig(occ_path)
-    plt.close(fig_occ)
-    print(f"  ✓ Saved: {occ_path}")
+            if n < MIN_TRIALS:
+                # Too few trials: fill with NaN for plot, skip grand average
+                print(f"  !  {condition_key}: {n} trials "
+                      f"(< {MIN_TRIALS} minimum) -- excluded from grand average")
+                n_times = len(times_ref)
+                occ_data[condition_key]   = np.full((1, n_times), np.nan)
+                motor_data[condition_key] = np.full((1, n_times), np.nan)
+                continue
 
-    # --- Plot 2: Motor ERP per feedback condition ---
-    fig_motor = plot_erp_figure(
-        times, motor_data,
-        channel_label=f"Motor ({motor_channel})",
-        participant_id=participant_id,
-        palette=palette, alpha_fill=alpha_fill,
-        error_type=error_type, smooth_sigma=smooth_sigma,
-    )
-    motor_path = os.path.join(subj_dir, f"{participant_id}_p{session}_erp_motor.png")
-    fig_motor.savefig(motor_path)
-    plt.close(fig_motor)
-    print(f"  ✓ Saved: {motor_path}")
+            # Extract (n_trials, n_times) arrays, baseline-corrected
+            _, occ_trials   = extract_channel_data(
+                cond_epochs, OCCIPITAL_CHANNELS, BASELINE)
+            _, motor_trials = extract_channel_data(
+                cond_epochs, MOTOR_CHANNEL, BASELINE)
 
-    # --- Plot 3: Combined 2×2 overview ---
-    fig_combined = plot_combined_figure(
-        times, occ_data, motor_data,
-        participant_id=participant_id,
-        palette=palette, alpha_fill=alpha_fill,
-        error_type=error_type, smooth_sigma=smooth_sigma,
-    )
-    combined_path = os.path.join(subj_dir, f"{participant_id}_p{session}_erp_combined.png")
-    fig_combined.savefig(combined_path)
-    plt.close(fig_combined)
-    print(f"  ✓ Saved: {combined_path}")
+            occ_data[condition_key]   = occ_trials
+            motor_data[condition_key] = motor_trials
 
-    return times, occ_data, motor_data
+            # Level 1: average across trials -> (n_times,)
+            participant_erps_occ[condition_key].append(occ_trials.mean(axis=0))
+            participant_erps_motor[condition_key].append(motor_trials.mean(axis=0))
+
+            print(f"  ok {condition_key}: {n} trials")
+
+        # Save per-participant plot
+        fig  = plot_participant_combined(times_ref, occ_data, motor_data, pid, session)
+        path = os.path.join(per_participant_dir, f"{pid}_p{session}_erp_combined.png")
+        fig.savefig(path)
+        plt.close(fig)
+        print(f"  Saved: {path}")
+
+    # ------------------------------------------------------------------
+    # PASS 2: Grand average
+    # ------------------------------------------------------------------
+    print("\n\nPASS 2 -- GRAND AVERAGE")
+    print("=" * 60)
+
+    if times_ref is None:
+        print("X  No participant data loaded -- cannot compute grand average.")
+        return
+
+    print("\nParticipants contributing to grand average per condition:")
+    for k in CONDITION_MAP:
+        print(f"  {k}: "
+              f"{len(participant_erps_occ[k])} occipital / "
+              f"{len(participant_erps_motor[k])} motor")
+
+    # Level 2: average across participants
+    grand_avg_occ   = {}
+    grand_avg_motor = {}
+
+    for condition_key in CONDITION_MAP:
+        erps_occ   = participant_erps_occ[condition_key]
+        erps_motor = participant_erps_motor[condition_key]
+
+        dummy = {
+            "mean":          np.full(len(times_ref), np.nan),
+            "lower":         np.full(len(times_ref), np.nan),
+            "upper":         np.full(len(times_ref), np.nan),
+            "n_participants": 0,
+        }
+
+        if len(erps_occ) < 2:
+            print(f"  !  {condition_key}: fewer than 2 participants -- skipping")
+            grand_avg_occ[condition_key]   = dummy
+            grand_avg_motor[condition_key] = dummy
+            continue
+
+        grand_avg_occ[condition_key]   = compute_grand_average(erps_occ)
+        grand_avg_motor[condition_key] = compute_grand_average(erps_motor)
+
+    # Save grand average figures
+    saves = [
+        # (figure,                                                  filename)
+        (plot_grand_avg_figure(times_ref, grand_avg_occ,
+            f"Occipital ({', '.join(OCCIPITAL_CHANNELS)} avg)",
+            comparison="solo_vs_trio"),
+         "grand_avg_occipital_solo_vs_trio.png"),
+
+        (plot_grand_avg_figure(times_ref, grand_avg_motor,
+            f"Motor ({MOTOR_CHANNEL})",
+            comparison="solo_vs_trio"),
+         "grand_avg_motor_solo_vs_trio.png"),
+
+        (plot_grand_avg_figure(times_ref, grand_avg_occ,
+            f"Occipital ({', '.join(OCCIPITAL_CHANNELS)} avg)",
+            comparison="feedback"),
+         "grand_avg_occipital_feedback.png"),
+
+        (plot_grand_avg_figure(times_ref, grand_avg_motor,
+            f"Motor ({MOTOR_CHANNEL})",
+            comparison="feedback"),
+         "grand_avg_motor_feedback.png"),
+
+        (plot_grand_avg_combined(times_ref, grand_avg_occ, grand_avg_motor),
+         "grand_avg_combined.png"),
+    ]
+
+    print()
+    for fig, fname in saves:
+        path = os.path.join(grand_avg_dir, fname)
+        fig.savefig(path)
+        plt.close(fig)
+        print(f"  Saved: {path}")
+
+    print("\n" + "=" * 60)
+    print("PIPELINE COMPLETE")
+    print(f"  Per-participant plots : {per_participant_dir}")
+    print(f"  Grand average plots  : {grand_avg_dir}")
+    print("=" * 60)
 
 
 # ============================================================
@@ -482,35 +609,11 @@ def process_participant(participant_id: str, session: int,
 if __name__ == "__main__":
     print("ERP ANALYSIS PIPELINE")
     print("=" * 60)
-    print(f"Participants:  {len(PARTICIPANTS)}")
-    print(f"Output dir:    {OUTPUT_DIR}")
-    print(f"Baseline:      {BASELINE}")
-    print(f"Error bands:   {ERROR_TYPE}")
-    print(f"Smoothing σ:   {SMOOTH_SIGMA} samples")
+    print(f"Participants : {len(PARTICIPANTS)}")
+    print(f"Output dir   : {OUTPUT_DIR}")
+    print(f"Baseline     : {BASELINE}")
+    print(f"Error bands  : {ERROR_TYPE}  (grand average = across participants)")
+    print(f"Smoothing    : {SMOOTH_SIGMA} samples")
+    print(f"Min trials   : {MIN_TRIALS} per condition to enter grand average")
     print("=" * 60)
-
-    for pid, session in PARTICIPANTS:
-        try:
-            process_participant(
-                participant_id  = pid,
-                session         = session,
-                data_dir        = DATA_DIR,
-                output_dir      = OUTPUT_DIR,
-                event_id        = EVENT_ID,
-                occ_channels    = OCCIPITAL_CHANNELS,
-                motor_channel   = MOTOR_CHANNEL,
-                baseline        = BASELINE,
-                error_type      = ERROR_TYPE,
-                smooth_sigma    = SMOOTH_SIGMA,
-                palette         = PALETTE,
-                alpha_fill      = ALPHA_FILL,
-            )
-        except FileNotFoundError as e:
-            print(f"\n  ✗  Skipped {pid} p{session}: {e}")
-        except Exception as e:
-            print(f"\n  ✗  Error for {pid} p{session}: {e}")
-            raise
-
-    print("\n" + "=" * 60)
-    print("PIPELINE COMPLETE")
-    print("=" * 60)
+    run_pipeline()
