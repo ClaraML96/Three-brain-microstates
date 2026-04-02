@@ -20,10 +20,7 @@ Channels of interest:
 
 Output per run
 --------------
-  figures/erp/
-    per_participant/
-      {id}_p{s}_erp_combined.png   <- per-participant 2x2 overview
-    grand_average/
+  figures/ grand_average/
       grand_avg_occipital_solo_vs_trio.png
       grand_avg_motor_solo_vs_trio.png
       grand_avg_occipital_feedback.png
@@ -44,7 +41,7 @@ from scipy.ndimage import gaussian_filter1d
 # ============================================================
 
 DATA_DIR   = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\ica_cleaned"
-OUTPUT_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\figures\erp"
+OUTPUT_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\figures\grand_average"
 
 PARTICIPANTS = [
     ("301", 1), ("301", 2), ("301", 3),
@@ -68,11 +65,14 @@ MOTOR_CHANNEL      = "C3"
 TMIN, TMAX   = -0.5, 5.5
 BASELINE     = (-0.5, 0.0)   # seconds; set to None to skip
 SMOOTH_SIGMA = 5              # Gaussian smoothing in samples (0 = off)
-ERROR_TYPE   = "se"           # "se" or "ci95"
+ERROR_TYPE   = "ci95"         # "se" or "ci95" -- 95% CI shown in grand average
 
 # Minimum trials a participant must have in a condition to be included
 # in the grand average for that condition.
 MIN_TRIALS = 10
+
+# Set to False to skip per-participant plots and only produce grand average.
+SAVE_PER_PARTICIPANT = False
 
 PALETTE = {
     "solo":             "#2271B5",
@@ -80,7 +80,9 @@ PALETTE = {
     "with_feedback":    "#1B7837",
     "without_feedback": "#762A83",
 }
-ALPHA_FILL = 0.18
+ALPHA_FILL    = 0.35   # opacity of the CI band (higher = more visible)
+CI_EDGE_ALPHA = 0.7    # opacity of dashed CI boundary lines
+CI_LINEWIDTH  = 0.8    # width of dashed CI boundary lines
 
 # ============================================================
 # PUBLICATION STYLE
@@ -221,14 +223,24 @@ def _draw_grand_avg_axes(ax, times, stats_a, stats_b,
         (stats_a, label_a, color_a),
         (stats_b, label_b, color_b),
     ]:
-        n = stats["n_participants"]
-        ax.plot(times, stats["mean"] * 1e6,
-                color=color, linewidth=2.0,
-                label=f"{label}  (n={n})")
-        ax.fill_between(times,
-                        stats["lower"] * 1e6,
-                        stats["upper"] * 1e6,
-                        color=color, alpha=ALPHA_FILL)
+        n    = stats["n_participants"]
+        mean = stats["mean"] * 1e6
+        lo   = stats["lower"] * 1e6
+        hi   = stats["upper"] * 1e6
+
+        # Mean line
+        ax.plot(times, mean, color=color, linewidth=2.0,
+                label=f"{label}  (n={n})", zorder=3)
+
+        # Filled CI band
+        ax.fill_between(times, lo, hi,
+                        color=color, alpha=ALPHA_FILL, zorder=2)
+
+        # Dashed boundary lines for extra visibility
+        ax.plot(times, lo, color=color, linewidth=CI_LINEWIDTH,
+                linestyle="--", alpha=CI_EDGE_ALPHA, zorder=2)
+        ax.plot(times, hi, color=color, linewidth=CI_LINEWIDTH,
+                linestyle="--", alpha=CI_EDGE_ALPHA, zorder=2)
 
     ax.axvline(0, color="black", linewidth=0.8, linestyle="--", alpha=0.5)
     ax.axhline(0, color="grey",  linewidth=0.5, linestyle="-",  alpha=0.3)
@@ -258,7 +270,7 @@ def plot_grand_avg_figure(times, grand_avg, channel_label, comparison="solo_vs_t
 
         if comparison == "solo_vs_trio":
             fig.suptitle(f"Grand Average ERP -- {channel_label}  |  Solo vs Trio",
-                         fontsize=14, fontweight="bold", y=1.02)
+                         fontsize=14, fontweight="bold", y=0.98)
             panels = [
                 (axes[0], "with_feedback",    "With Feedback"),
                 (axes[1], "without_feedback", "Without Feedback"),
@@ -279,7 +291,7 @@ def plot_grand_avg_figure(times, grand_avg, channel_label, comparison="solo_vs_t
         elif comparison == "feedback":
             fig.suptitle(
                 f"Grand Average ERP -- {channel_label}  |  With vs Without Feedback",
-                fontsize=14, fontweight="bold", y=1.02)
+                fontsize=14, fontweight="bold", y=0.98)
             panels = [
                 (axes[0], "solo", "Solo"),
                 (axes[1], "trio", "Trio"),
@@ -300,7 +312,7 @@ def plot_grand_avg_figure(times, grand_avg, channel_label, comparison="solo_vs_t
 
         fig.text(0.5, -0.04, _annotation(),
                  ha="center", fontsize=8, color="grey", style="italic")
-        fig.tight_layout()
+        fig.tight_layout(rect=[0, 0, 1, 0.93])
     return fig
 
 
@@ -314,7 +326,7 @@ def plot_grand_avg_combined(times, grand_avg_occ, grand_avg_motor):
     with plt.rc_context(STYLE):
         fig, axes = plt.subplots(2, 2, figsize=(14, 8), sharey="row")
         fig.suptitle("Grand Average ERP Overview  |  Solo vs Trio",
-                     fontsize=14, fontweight="bold", y=1.02)
+                     fontsize=14, fontweight="bold", y=0.98)
 
         row_data = [
             (grand_avg_occ,   f"Occipital ({', '.join(OCCIPITAL_CHANNELS)} avg)"),
@@ -343,7 +355,7 @@ def plot_grand_avg_combined(times, grand_avg_occ, grand_avg_motor):
 
         fig.text(0.5, -0.02, _annotation(),
                  ha="center", fontsize=8, color="grey", style="italic")
-        fig.tight_layout()
+        fig.tight_layout(rect=[0, 0, 1, 0.93])
     return fig
 
 
@@ -398,7 +410,7 @@ def plot_participant_combined(times, occ_data, motor_data, participant_id, sessi
         fig.suptitle(
             f"ERP -- Participant {participant_id}  Session {session}  "
             f"[variability = SE across trials]",
-            fontsize=13, fontweight="bold", y=1.02)
+            fontsize=13, fontweight="bold", y=0.98)
 
         row_items = [
             (occ_data,   f"Occipital ({', '.join(OCCIPITAL_CHANNELS)} avg)"),
@@ -426,7 +438,7 @@ def plot_participant_combined(times, occ_data, motor_data, participant_id, sessi
                  f"Baseline: {BASELINE[0]} to {BASELINE[1]} s   |   "
                  f"Smoothing sigma={SMOOTH_SIGMA} samples",
                  ha="center", fontsize=8, color="grey", style="italic")
-        fig.tight_layout()
+        fig.tight_layout(rect=[0, 0, 1, 0.93])
     return fig
 
 
@@ -436,27 +448,16 @@ def plot_participant_combined(times, occ_data, motor_data, participant_id, sessi
 
 def run_pipeline():
     """
-    Two-pass pipeline.
+    Save ERP grand average figures comparing conditions across participants.
 
-    Pass 1 -- per participant
-        For each participant/session:
-          - Load ICA-cleaned epochs
-          - For each condition, extract channel data and baseline-correct
-          - Compute trial-level SE for per-participant plot
-          - Compute trial average (Level 1) and store for grand average
-          - Save per-participant combined plot
-
-    Pass 2 -- grand average
+    grand average:
         For each condition:
           - Stack trial averages across participants
           - Compute mean +/- SE across participants (Level 2)
         Save all grand average figures.
     """
-
-    per_participant_dir = os.path.join(OUTPUT_DIR, "per_participant")
-    grand_avg_dir       = os.path.join(OUTPUT_DIR, "grand_average")
-    os.makedirs(per_participant_dir, exist_ok=True)
-    os.makedirs(grand_avg_dir,       exist_ok=True)
+    grand_avg_dir       = OUTPUT_DIR
+    os.makedirs(grand_avg_dir, exist_ok=True)
 
     # Collect Level-1 averages: one waveform per participant per condition
     participant_erps_occ   = {k: [] for k in CONDITION_MAP}
@@ -514,12 +515,13 @@ def run_pipeline():
 
             print(f"  ok {condition_key}: {n} trials")
 
-        # Save per-participant plot
-        fig  = plot_participant_combined(times_ref, occ_data, motor_data, pid, session)
-        path = os.path.join(per_participant_dir, f"{pid}_p{session}_erp_combined.png")
-        fig.savefig(path)
-        plt.close(fig)
-        print(f"  Saved: {path}")
+        # Save per-participant plot (optional)
+        if SAVE_PER_PARTICIPANT:
+            fig  = plot_participant_combined(times_ref, occ_data, motor_data, pid, session)
+            path = os.path.join(OUTPUT_DIR, f"{pid}_p{session}_erp_combined.png")
+            fig.savefig(path)
+            plt.close(fig)
+            print(f"  Saved: {path}")
 
     # ------------------------------------------------------------------
     # PASS 2: Grand average
@@ -597,7 +599,6 @@ def run_pipeline():
 
     print("\n" + "=" * 60)
     print("PIPELINE COMPLETE")
-    print(f"  Per-participant plots : {per_participant_dir}")
     print(f"  Grand average plots  : {grand_avg_dir}")
     print("=" * 60)
 
