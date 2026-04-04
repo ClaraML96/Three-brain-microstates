@@ -109,6 +109,7 @@ STYLE = {
 # DATA UTILITIES
 # ============================================================
 
+# Function returns an mne.Epochs that is cleaned (through ICA processing), ready for averaging steps.
 def load_cleaned_epochs(data_dir, participant_id, session):
     """Load ICA-cleaned epochs and attach standard 10-20 montage."""
     fname = os.path.join(data_dir, f"{participant_id}_p{session}_ica_cleaned-epo.fif")
@@ -119,7 +120,9 @@ def load_cleaned_epochs(data_dir, participant_id, session):
     epochs.set_montage(montage, on_missing="ignore")
     return epochs
 
-
+# Function acts as a translator and a filter. 
+# It takes high-level, readable names used for the experimental conditions (like "with_feedback/solo") 
+# and finds the specific raw trigger codes that correspond to them in the EEG data.
 def select_condition(epochs, condition_key, event_id):
     """Return epochs matching a condition key (pools multiple Condition_N ids)."""
     condition_ids  = event_id.get(condition_key)
@@ -131,7 +134,10 @@ def select_condition(epochs, condition_key, event_id):
         return epochs[epochs.events[:, 2] == -1]   # guaranteed empty
     return epochs[available_keys]
 
-
+# Function is the "Data Slicer and Cleaner." 
+# It will take a block of EEG data and "thin it down" 
+# into a more simple format that represents the specific brain region you care about (like the Occipital or Motor regions), 
+# while ensuring the signal is "leveled" correctly.
 def extract_channel_data(epochs, channels, baseline):
     """
     Extract and baseline-correct channel data from epochs.
@@ -167,7 +173,7 @@ def extract_channel_data(epochs, channels, baseline):
 
 
 # ============================================================
-# GRAND AVERAGE UTILITIES
+# AVERAGE UTILITIES
 # ============================================================
 
 def compute_grand_average(participant_erps):
@@ -363,83 +369,83 @@ def plot_grand_avg_combined(times, grand_avg_occ, grand_avg_motor):
 # PER-PARTICIPANT PLOT
 # ============================================================
 
-def _draw_trial_axes(ax, times, stats_solo, stats_trio, title,
-                     show_xlabel=True, show_legend=True):
-    """Draw per-participant ERP axes (SE across trials)."""
-    for label, stats, color in [
-        ("Solo", stats_solo, PALETTE["solo"]),
-        ("Trio", stats_trio, PALETTE["trio"]),
-    ]:
-        ax.plot(times, stats["mean"] * 1e6,
-                color=color, linewidth=1.6,
-                label=f"{label}  (n={stats['n_trials']} trials)")
-        ax.fill_between(times,
-                        stats["lower"] * 1e6,
-                        stats["upper"] * 1e6,
-                        color=color, alpha=ALPHA_FILL)
-    ax.axvline(0, color="black", linewidth=0.8, linestyle="--", alpha=0.5)
-    ax.axhline(0, color="grey",  linewidth=0.5, linestyle="-",  alpha=0.3)
-    ax.invert_yaxis()
-    ax.set_title(title, fontweight="bold", pad=8)
-    if show_xlabel:
-        ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Amplitude (uV)")
-    if show_legend:
-        ax.legend(loc="upper right")
+# def _draw_trial_axes(ax, times, stats_solo, stats_trio, title,
+#                      show_xlabel=True, show_legend=True):
+#     """Draw per-participant ERP axes (SE across trials)."""
+#     for label, stats, color in [
+#         ("Solo", stats_solo, PALETTE["solo"]),
+#         ("Trio", stats_trio, PALETTE["trio"]),
+#     ]:
+#         ax.plot(times, stats["mean"] * 1e6,
+#                 color=color, linewidth=1.6,
+#                 label=f"{label}  (n={stats['n_trials']} trials)")
+#         ax.fill_between(times,
+#                         stats["lower"] * 1e6,
+#                         stats["upper"] * 1e6,
+#                         color=color, alpha=ALPHA_FILL)
+#     ax.axvline(0, color="black", linewidth=0.8, linestyle="--", alpha=0.5)
+#     ax.axhline(0, color="grey",  linewidth=0.5, linestyle="-",  alpha=0.3)
+#     ax.invert_yaxis()
+#     ax.set_title(title, fontweight="bold", pad=8)
+#     if show_xlabel:
+#         ax.set_xlabel("Time (s)")
+#     ax.set_ylabel("Amplitude (uV)")
+#     if show_legend:
+#         ax.legend(loc="upper right")
 
 
-def compute_trial_stats(data):
-    """Mean +/- SE across trials (for per-participant plots)."""
-    n    = data.shape[0]
-    mean = np.nanmean(data, axis=0)
-    se   = np.nanstd(data, axis=0, ddof=1) / np.sqrt(n)
-    ci   = 1.96 * se if ERROR_TYPE == "ci95" else se
-    if SMOOTH_SIGMA > 0:
-        mean  = gaussian_filter1d(mean,       SMOOTH_SIGMA)
-        lower = gaussian_filter1d(mean - ci,  SMOOTH_SIGMA)
-        upper = gaussian_filter1d(mean + ci,  SMOOTH_SIGMA)
-    else:
-        lower, upper = mean - ci, mean + ci
-    return {"mean": mean, "lower": lower, "upper": upper, "n_trials": n}
+# def compute_trial_stats(data):
+#     """Mean +/- SE across trials (for per-participant plots)."""
+#     n    = data.shape[0]
+#     mean = np.nanmean(data, axis=0)
+#     se   = np.nanstd(data, axis=0, ddof=1) / np.sqrt(n)
+#     ci   = 1.96 * se if ERROR_TYPE == "ci95" else se
+#     if SMOOTH_SIGMA > 0:
+#         mean  = gaussian_filter1d(mean,       SMOOTH_SIGMA)
+#         lower = gaussian_filter1d(mean - ci,  SMOOTH_SIGMA)
+#         upper = gaussian_filter1d(mean + ci,  SMOOTH_SIGMA)
+#     else:
+#         lower, upper = mean - ci, mean + ci
+#     return {"mean": mean, "lower": lower, "upper": upper, "n_trials": n}
 
 
-def plot_participant_combined(times, occ_data, motor_data, participant_id, session):
-    """2x2 per-participant overview (SE across trials, not participants)."""
-    with plt.rc_context(STYLE):
-        fig, axes = plt.subplots(2, 2, figsize=(13, 8), sharey="row")
-        fig.suptitle(
-            f"ERP -- Participant {participant_id}  Session {session}  "
-            f"[variability = SE across trials]",
-            fontsize=13, fontweight="bold", y=0.98)
+# def plot_participant_combined(times, occ_data, motor_data, participant_id, session):
+#     """2x2 per-participant overview (SE across trials, not participants)."""
+#     with plt.rc_context(STYLE):
+#         fig, axes = plt.subplots(2, 2, figsize=(13, 8), sharey="row")
+#         fig.suptitle(
+#             f"ERP -- Participant {participant_id}  Session {session}  "
+#             f"[variability = SE across trials]",
+#             fontsize=13, fontweight="bold", y=0.98)
 
-        row_items = [
-            (occ_data,   f"Occipital ({', '.join(OCCIPITAL_CHANNELS)} avg)"),
-            (motor_data, f"Motor ({MOTOR_CHANNEL})"),
-        ]
-        for row, (data_dict, row_label) in enumerate(row_items):
-            for col, (fb_key, panel_title) in enumerate(
-                [("with_feedback",    "With Feedback"),
-                 ("without_feedback", "Without Feedback")]
-            ):
-                ax = axes[row][col]
-                s_solo = compute_trial_stats(data_dict[f"{fb_key}/solo"])
-                s_trio = compute_trial_stats(data_dict[f"{fb_key}/trio"])
-                _draw_trial_axes(
-                    ax, times, s_solo, s_trio,
-                    title=panel_title if row == 0 else "",
-                    show_xlabel=(row == 1),
-                    show_legend=(row == 0 and col == 0),
-                )
-                if col == 0:
-                    ax.set_ylabel(f"{row_label}\nAmplitude (uV)")
+#         row_items = [
+#             (occ_data,   f"Occipital ({', '.join(OCCIPITAL_CHANNELS)} avg)"),
+#             (motor_data, f"Motor ({MOTOR_CHANNEL})"),
+#         ]
+#         for row, (data_dict, row_label) in enumerate(row_items):
+#             for col, (fb_key, panel_title) in enumerate(
+#                 [("with_feedback",    "With Feedback"),
+#                  ("without_feedback", "Without Feedback")]
+#             ):
+#                 ax = axes[row][col]
+#                 s_solo = compute_trial_stats(data_dict[f"{fb_key}/solo"])
+#                 s_trio = compute_trial_stats(data_dict[f"{fb_key}/trio"])
+#                 _draw_trial_axes(
+#                     ax, times, s_solo, s_trio,
+#                     title=panel_title if row == 0 else "",
+#                     show_xlabel=(row == 1),
+#                     show_legend=(row == 0 and col == 0),
+#                 )
+#                 if col == 0:
+#                     ax.set_ylabel(f"{row_label}\nAmplitude (uV)")
 
-        fig.text(0.5, -0.02,
-                 f"Shaded region: +/- SE (across trials)   |   "
-                 f"Baseline: {BASELINE[0]} to {BASELINE[1]} s   |   "
-                 f"Smoothing sigma={SMOOTH_SIGMA} samples",
-                 ha="center", fontsize=8, color="grey", style="italic")
-        fig.tight_layout(rect=[0, 0, 1, 0.93])
-    return fig
+#         fig.text(0.5, -0.02,
+#                  f"Shaded region: +/- SE (across trials)   |   "
+#                  f"Baseline: {BASELINE[0]} to {BASELINE[1]} s   |   "
+#                  f"Smoothing sigma={SMOOTH_SIGMA} samples",
+#                  ha="center", fontsize=8, color="grey", style="italic")
+#         fig.tight_layout(rect=[0, 0, 1, 0.93])
+#     return fig
 
 
 # ============================================================
@@ -516,12 +522,12 @@ def run_pipeline():
             print(f"  ok {condition_key}: {n} trials")
 
         # Save per-participant plot (optional)
-        if SAVE_PER_PARTICIPANT:
-            fig  = plot_participant_combined(times_ref, occ_data, motor_data, pid, session)
-            path = os.path.join(OUTPUT_DIR, f"{pid}_p{session}_erp_combined.png")
-            fig.savefig(path)
-            plt.close(fig)
-            print(f"  Saved: {path}")
+        # if SAVE_PER_PARTICIPANT:
+        #     fig  = plot_participant_combined(times_ref, occ_data, motor_data, pid, session)
+        #     path = os.path.join(OUTPUT_DIR, f"{pid}_p{session}_erp_combined.png")
+        #     fig.savefig(path)
+        #     plt.close(fig)
+        #     print(f"  Saved: {path}")
 
     # ------------------------------------------------------------------
     # PASS 2: Grand average
