@@ -109,6 +109,8 @@ STYLE = {
 # DATA UTILITIES
 # ============================================================
 
+#  Cleaning the data
+
 # Function returns an mne.Epochs that is cleaned (through ICA processing), ready for averaging steps.
 def load_cleaned_epochs(data_dir, participant_id, session):
     """Load ICA-cleaned epochs and attach standard 10-20 montage."""
@@ -121,8 +123,6 @@ def load_cleaned_epochs(data_dir, participant_id, session):
     return epochs
 
 # Function acts as a translator and a filter. 
-# It takes high-level, readable names used for the experimental conditions (like "with_feedback/solo") 
-# and finds the specific raw trigger codes that correspond to them in the EEG data.
 def select_condition(epochs, condition_key, event_id):
     """Return epochs matching a condition key (pools multiple Condition_N ids)."""
     condition_ids  = event_id.get(condition_key)
@@ -134,10 +134,7 @@ def select_condition(epochs, condition_key, event_id):
         return epochs[epochs.events[:, 2] == -1]   # guaranteed empty
     return epochs[available_keys]
 
-# Function is the "Data Slicer and Cleaner." 
-# It will take a block of EEG data and "thin it down" 
-# into a more simple format that represents the specific brain region you care about (like the Occipital or Motor regions), 
-# while ensuring the signal is "leveled" correctly.
+# Function will "Data Slicer and Cleaner." 
 def extract_channel_data(epochs, channels, baseline):
     """
     Extract and baseline-correct channel data from epochs.
@@ -176,6 +173,7 @@ def extract_channel_data(epochs, channels, baseline):
 # AVERAGE UTILITIES
 # ============================================================
 
+# Calculating standard error and confidence intervals across participants for the grand average plots.
 def compute_grand_average(participant_erps):
     """
     Compute grand average and cross-participant variability.
@@ -217,7 +215,7 @@ def _annotation():
             f"Baseline: {BASELINE[0]} to {BASELINE[1]} s   |   "
             f"Smoothing sigma={SMOOTH_SIGMA} samples")
 
-
+# Renders the ERP grand average plot
 def _draw_grand_avg_axes(ax, times, stats_a, stats_b,
                          label_a, label_b, color_a, color_b,
                          title, show_xlabel=True, show_legend=True):
@@ -258,7 +256,7 @@ def _draw_grand_avg_axes(ax, times, stats_a, stats_b,
     if show_legend:
         ax.legend(loc="upper right")
 
-
+# Aranging the panels
 def plot_grand_avg_figure(times, grand_avg, channel_label, comparison="solo_vs_trio"):
     """
     Two-panel grand average figure.
@@ -321,7 +319,7 @@ def plot_grand_avg_figure(times, grand_avg, channel_label, comparison="solo_vs_t
         fig.tight_layout(rect=[0, 0, 1, 0.93])
     return fig
 
-
+# ERP overview
 def plot_grand_avg_combined(times, grand_avg_occ, grand_avg_motor):
     """
     2x2 combined grand average figure.
