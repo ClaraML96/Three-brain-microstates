@@ -62,6 +62,7 @@ EVENT_ID = CONDITION_MAP
 OCCIPITAL_CHANNELS = ["O1", "O2", "Oz"]
 MOTOR_CHANNEL      = "C3"
 
+# Time window 
 TMIN, TMAX   = -0.5, 5.5
 BASELINE     = (-0.5, 0.0)   # seconds; set to None to skip
 SMOOTH_SIGMA = 5              # Gaussian smoothing in samples (0 = off)
@@ -451,161 +452,56 @@ def plot_grand_avg_combined(times, grand_avg_occ, grand_avg_motor):
 # ============================================================
 
 def run_pipeline():
-    """
-    Save ERP grand average figures comparing conditions across participants.
 
-    grand average:
-        For each condition:
-          - Stack trial averages across participants
-          - Compute mean +/- SE across participants (Level 2)
-        Save all grand average figures.
-    """
-    grand_avg_dir       = OUTPUT_DIR
-    os.makedirs(grand_avg_dir, exist_ok=True)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    # Collect Level-1 averages: one waveform per participant per condition
+    # Containers for participant-level ERPs
     participant_erps_occ   = {k: [] for k in CONDITION_MAP}
     participant_erps_motor = {k: [] for k in CONDITION_MAP}
     times_ref = None
 
-    # ------------------------------------------------------------------
-    # PASS 1: Per-participant
-    # ------------------------------------------------------------------
-    print("\nPASS 1 -- PER-PARTICIPANT ERPs")
-    print("=" * 60)
-
+    print("\n--- PASS 1: Calculating Level-1 ERPs (Participants) ---")
     for pid, session in PARTICIPANTS:
-        label = f"{pid} p{session}"
-        print(f"\n  {label}")
-        print(f"  {'-' * 40}")
-
         try:
             epochs = load_cleaned_epochs(DATA_DIR, pid, session)
-        except FileNotFoundError as e:
-            print(f"  X  Skipped: {e}")
+            if times_ref is None:
+                times_ref = epochs.times
+            
+            for cond_key in CONDITION_MAP:
+                cond_epochs = select_condition(epochs, cond_key, EVENT_ID)
+                
+                if len(cond_epochs) >= MIN_TRIALS:
+                    # Extract channel data (Averages O1, O2, Oz | Picks C3)
+                    _, occ_trials   = extract_channel_data(cond_epochs, OCCIPITAL_CHANNELS, BASELINE)
+                    _, motor_trials = extract_channel_data(cond_epochs, MOTOR_CHANNEL, BASELINE)
+
+                    # Average trials to create the single ERP waveform for this person
+                    participant_erps_occ[cond_key].append(occ_trials.mean(axis=0))
+                    participant_erps_motor[cond_key].append(motor_trials.mean(axis=0))
+        except FileNotFoundError:
             continue
 
-        if times_ref is None:
-            times_ref = epochs.times
+    print("--- PASS 2: Calculating Level-2 Grand Averages (Group) ---")
+    grand_avg_occ   = {k: compute_grand_average(participant_erps_occ[k]) for k in CONDITION_MAP}
+    grand_avg_motor = {k: compute_grand_average(participant_erps_motor[k]) for k in CONDITION_MAP}
 
-        occ_data   = {}
-        motor_data = {}
+    # --- STEP 3: Saving the Visuals ---
+    print("--- STEP 3: Saving Visualizations ---")
+    
+    # 1. THE MOTOR (C3) ERP VISUAL (Solo vs Trio)
+    fig_motor = plot_grand_avg_figure(times_ref, grand_avg_motor, f"Motor ({MOTOR_CHANNEL})", comparison="solo_vs_trio")
+    fig_motor.savefig(os.path.join(OUTPUT_DIR, "grand_avg_motor_solo_vs_trio.png"))
+    plt.close(fig_motor)
 
-        for condition_key in CONDITION_MAP:
-            cond_epochs = select_condition(epochs, condition_key, EVENT_ID)
-            n = len(cond_epochs)
+    # 2. THE OCCIPITAL ERP VISUAL (Solo vs Trio)
+    fig_occ = plot_grand_avg_figure(times_ref, grand_avg_occ, "Occipital (O1, O2, Oz avg)", comparison="solo_vs_trio")
+    fig_occ.savefig(os.path.join(OUTPUT_DIR, "grand_avg_occipital_solo_vs_trio.png"))
+    plt.close(fig_occ)
 
-            if n < MIN_TRIALS:
-                # Too few trials: fill with NaN for plot, skip grand average
-                print(f"  !  {condition_key}: {n} trials "
-                      f"(< {MIN_TRIALS} minimum) -- excluded from grand average")
-                n_times = len(times_ref)
-                occ_data[condition_key]   = np.full((1, n_times), np.nan)
-                motor_data[condition_key] = np.full((1, n_times), np.nan)
-                continue
-
-            # Extract (n_trials, n_times) arrays, baseline-corrected
-            _, occ_trials   = extract_channel_data(
-                cond_epochs, OCCIPITAL_CHANNELS, BASELINE)
-            _, motor_trials = extract_channel_data(
-                cond_epochs, MOTOR_CHANNEL, BASELINE)
-
-            occ_data[condition_key]   = occ_trials
-            motor_data[condition_key] = motor_trials
-
-            # Level 1: average across trials -> (n_times,)
-            participant_erps_occ[condition_key].append(occ_trials.mean(axis=0))
-            participant_erps_motor[condition_key].append(motor_trials.mean(axis=0))
-
-            print(f"  ok {condition_key}: {n} trials")
-
-        # Save per-participant plot (optional)
-        # if SAVE_PER_PARTICIPANT:
-        #     fig  = plot_participant_combined(times_ref, occ_data, motor_data, pid, session)
-        #     path = os.path.join(OUTPUT_DIR, f"{pid}_p{session}_erp_combined.png")
-        #     fig.savefig(path)
-        #     plt.close(fig)
-        #     print(f"  Saved: {path}")
-
-    # ------------------------------------------------------------------
-    # PASS 2: Grand average
-    # ------------------------------------------------------------------
-    print("\n\nPASS 2 -- GRAND AVERAGE")
-    print("=" * 60)
-
-    if times_ref is None:
-        print("X  No participant data loaded -- cannot compute grand average.")
-        return
-
-    print("\nParticipants contributing to grand average per condition:")
-    for k in CONDITION_MAP:
-        print(f"  {k}: "
-              f"{len(participant_erps_occ[k])} occipital / "
-              f"{len(participant_erps_motor[k])} motor")
-
-    # Level 2: average across participants
-    grand_avg_occ   = {}
-    grand_avg_motor = {}
-
-    for condition_key in CONDITION_MAP:
-        erps_occ   = participant_erps_occ[condition_key]
-        erps_motor = participant_erps_motor[condition_key]
-
-        dummy = {
-            "mean":          np.full(len(times_ref), np.nan),
-            "lower":         np.full(len(times_ref), np.nan),
-            "upper":         np.full(len(times_ref), np.nan),
-            "n_participants": 0,
-        }
-
-        if len(erps_occ) < 2:
-            print(f"  !  {condition_key}: fewer than 2 participants -- skipping")
-            grand_avg_occ[condition_key]   = dummy
-            grand_avg_motor[condition_key] = dummy
-            continue
-
-        grand_avg_occ[condition_key]   = compute_grand_average(erps_occ)
-        grand_avg_motor[condition_key] = compute_grand_average(erps_motor)
-
-    # Save grand average figures
-    saves = [
-        # (figure,                                                  filename)
-        (plot_grand_avg_figure(times_ref, grand_avg_occ,
-            f"Occipital ({', '.join(OCCIPITAL_CHANNELS)} avg)",
-            comparison="solo_vs_trio"),
-         "grand_avg_occipital_solo_vs_trio.png"),
-
-        (plot_grand_avg_figure(times_ref, grand_avg_motor,
-            f"Motor ({MOTOR_CHANNEL})",
-            comparison="solo_vs_trio"),
-         "grand_avg_motor_solo_vs_trio.png"),
-
-        (plot_grand_avg_figure(times_ref, grand_avg_occ,
-            f"Occipital ({', '.join(OCCIPITAL_CHANNELS)} avg)",
-            comparison="feedback"),
-         "grand_avg_occipital_feedback.png"),
-
-        (plot_grand_avg_figure(times_ref, grand_avg_motor,
-            f"Motor ({MOTOR_CHANNEL})",
-            comparison="feedback"),
-         "grand_avg_motor_feedback.png"),
-
-        (plot_grand_avg_combined(times_ref, grand_avg_occ, grand_avg_motor),
-         "grand_avg_combined.png"),
-    ]
-
-    print()
-    for fig, fname in saves:
-        path = os.path.join(grand_avg_dir, fname)
-        fig.savefig(path)
-        plt.close(fig)
-        print(f"  Saved: {path}")
-
-    print("\n" + "=" * 60)
-    print("PIPELINE COMPLETE")
-    print(f"  Grand average plots  : {grand_avg_dir}")
-    print("=" * 60)
-
+    # 3. THE COMBINED 2x2 OVERVIEW
+    fig_comb = plot_grand_avg_combined(times_ref, grand_avg_occ, grand_avg_motor)
+    fig_comb.savefig(os.path.join(OUTPUT_DIR, "grand_avg_combined.png"))
+    plt.close(fig_comb)
 
 # ============================================================
 # ENTRY POINT
