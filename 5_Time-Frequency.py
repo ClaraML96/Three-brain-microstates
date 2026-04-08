@@ -22,7 +22,6 @@ epochs = mne.read_epochs(EPOCH_FILE, preload=True)
 sfreq = epochs.info["sfreq"]
 
 # Define wavelet parameters
-
 # frequencies of interest
 foi = np.linspace(1, 30, 30, dtype=int)
 
