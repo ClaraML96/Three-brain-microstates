@@ -460,7 +460,7 @@ def run_pipeline():
     participant_erps_motor = {k: [] for k in CONDITION_MAP}
     times_ref = None
 
-    print("\n--- PASS 1: Calculating Level-1 ERPs (Participants) ---")
+    # Averaging across trials
     for pid, session in PARTICIPANTS:
         try:
             epochs = load_cleaned_epochs(DATA_DIR, pid, session)
@@ -481,13 +481,11 @@ def run_pipeline():
         except FileNotFoundError:
             continue
 
-    print("--- PASS 2: Calculating Level-2 Grand Averages (Group) ---")
+    # Calculating Level-2 Grand Averages (Group) 
     grand_avg_occ   = {k: compute_grand_average(participant_erps_occ[k]) for k in CONDITION_MAP}
     grand_avg_motor = {k: compute_grand_average(participant_erps_motor[k]) for k in CONDITION_MAP}
 
-    # --- STEP 3: Saving the Visuals ---
-    print("--- STEP 3: Saving Visualizations ---")
-    
+    # Saving the Visuals
     # 1. THE MOTOR (C3) ERP VISUAL (Solo vs Trio)
     fig_motor = plot_grand_avg_figure(times_ref, grand_avg_motor, f"Motor ({MOTOR_CHANNEL})", comparison="solo_vs_trio")
     fig_motor.savefig(os.path.join(OUTPUT_DIR, "grand_avg_motor_solo_vs_trio.png"))

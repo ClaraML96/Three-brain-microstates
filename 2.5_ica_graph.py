@@ -9,8 +9,8 @@ import os
 
 DATA_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\ica_cleaned"
 
-PARTICIPANT_ID = "304"
-PARTICIPANT = 2
+PARTICIPANT_ID = "301"
+PARTICIPANT = 3
 EPOCH_FILE = os.path.join(
     DATA_DIR,
     f"{PARTICIPANT_ID}_p{PARTICIPANT}_ica_cleaned-epo.fif"
@@ -53,17 +53,17 @@ avg_signal = np.mean(data, axis=0)
 # PLOT 1: Average signal across trials (C3)
 # ============================================================
 
-plt.figure(figsize=(8,4))
+# plt.figure(figsize=(8,4))
 
-plt.plot(times, avg_signal)
+# plt.plot(times, avg_signal)
 
-plt.axvline(0, linestyle="--")
+# plt.axvline(0, linestyle="--")
 
-plt.xlabel("Time (s)")
-plt.ylabel("Amplitude (µV)")
-plt.title(f"Average ERP across trials") 
+# plt.xlabel("Time (s)")
+# plt.ylabel("Amplitude (µV)")
+# plt.title(f"Average ERP across trials") 
 
-plt.show()
+# plt.show()
 
 # ============================================================
 # PLOT 2: All trials + average
@@ -98,9 +98,9 @@ evoked.plot()
 # PLOT 4: Topographic map
 # ============================================================
 
-print("Plotting ERP topography")
+# print("Plotting ERP topography")
 
-evoked.plot_topomap(times=np.linspace(0.05,0.4,6))
+# evoked.plot_topomap(times=np.linspace(0.05,0.4,6))
 
 # ============================================================
 # PLOT 5: Global Field Power (GFP)
@@ -124,5 +124,3 @@ evoked.plot_topomap(times=np.linspace(0.05,0.4,6))
 # plt.title("Global Field Power")
 
 # plt.show()
-
-print("Visualization complete")
