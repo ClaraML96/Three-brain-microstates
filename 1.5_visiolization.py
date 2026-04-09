@@ -11,8 +11,8 @@ import matplotlib.pyplot as plt
 # ============================================================================
 
 DATA_PATH = r"C:\\Users\\clara\\OneDrive - Danmarks Tekniske Universitet\\Skrivebord\\DTU\\Human Centeret Artificial Intelligence\\Thesis\\data\\preprocessed\\"
-PARTICIPANT_ID = 301
-PARTICIPANT = 3
+PARTICIPANT_ID = 302
+PARTICIPANT = 1
 
 # Path to your already processed data
 EPOCHS_FILE = os.path.join(DATA_PATH, f"{PARTICIPANT_ID}_p{PARTICIPANT}_clean-epo.fif")

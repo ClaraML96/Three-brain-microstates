@@ -1,5 +1,6 @@
 import numpy as np
 import os
+import struct
 import mne
 import matplotlib
 matplotlib.use('TkAgg')
@@ -182,6 +183,191 @@ def extract_real_trial_events(events, sfreq, epoch_tmin, epoch_tmax):
 
     return collapsed_events, event_id
 
+def find_exp_start_from_bdf(file_path):
+    """
+    Read only the Status channel from a BDF file to find:
+    - ExpStart trigger (112) → crop start
+    - Last real trial trigger (10-59) → crop end
+    """
+    with open(file_path, 'rb') as f:
+        header_bytes = f.read(256)
+        n_channels = int(header_bytes[252:256].decode('ascii').strip())
+        chan_headers = f.read(256 * n_channels)
+
+        labels = [
+            chan_headers[i * 16:(i + 1) * 16].decode('ascii').strip()
+            for i in range(n_channels)
+        ]
+
+        n_records = int(header_bytes[236:244].decode('ascii').strip())
+        record_duration = float(header_bytes[244:252].decode('ascii').strip())
+
+        spr_offset = 216 * n_channels
+        samples_per_record = [
+            int(chan_headers[spr_offset + i*8:spr_offset + (i+1)*8].decode('ascii').strip())
+            for i in range(n_channels)
+        ]
+
+        sfreq = samples_per_record[0] / record_duration
+
+        status_idx = next((i for i, label in enumerate(labels) if 'Status' in label), None)
+        if status_idx is None:
+            raise RuntimeError("No Status channel found in BDF file")
+
+        bytes_per_sample = 3
+        record_size = sum(s * bytes_per_sample for s in samples_per_record)
+        status_offset_in_record = sum(
+            samples_per_record[i] * bytes_per_sample for i in range(status_idx)
+        )
+        status_samples_per_record = samples_per_record[status_idx]
+        status_bytes_per_record = status_samples_per_record * bytes_per_sample
+
+        data_start = 256 * (n_channels + 1)
+
+        sample_idx = 0
+        exp_start_sample = None
+        last_trial_sample = None
+        prev_val = 0
+
+        for rec in range(n_records):
+            # Seek directly to Status channel within this record — no full record read
+            f.seek(data_start + rec * record_size + status_offset_in_record)
+            status_bytes = f.read(status_bytes_per_record)
+            if len(status_bytes) < status_bytes_per_record:
+                break
+
+            for s in range(status_samples_per_record):
+                b = status_bytes[s * 3:s * 3 + 3]
+                val = struct.unpack('<I', b + b'\x00')[0] & 0xFFFF
+
+                if val != prev_val:
+                    if val == 112 and exp_start_sample is None:
+                        exp_start_sample = sample_idx
+                        print(f"✓ ExpStart (112) at sample {sample_idx} ({sample_idx/sfreq:.2f}s)")
+                    if 10 <= val <= 59 and exp_start_sample is not None:
+                        last_trial_sample = sample_idx
+
+                prev_val = val
+                sample_idx += 1
+
+    if exp_start_sample is None:
+        raise RuntimeError("ExpStart trigger (112) not found")
+
+    exp_start_time = exp_start_sample / sfreq
+    exp_end_time = (last_trial_sample / sfreq) if last_trial_sample else None
+    print(f"✓ Last real trial at sample {last_trial_sample} ({exp_end_time:.2f}s)")
+    return exp_start_time, exp_end_time, sfreq
+
+def extract_bdf_to_fif(file_path, participant, exp_start_time, exp_end_time, output_path, target_sfreq=512):
+    """
+    Read only participant + Status channels from BDF, decimate to target_sfreq
+    on the fly (record by record), and save as FIF — minimal RAM usage.
+    """
+    print(f"  Extracting channels directly from BDF (chunked, low-memory)...")
+
+    with open(file_path, 'rb') as f:
+        header_bytes = f.read(256)
+        n_channels = int(header_bytes[252:256].decode('ascii').strip())
+        chan_headers = f.read(256 * n_channels)
+
+        labels = [chan_headers[i*16:(i+1)*16].decode('ascii').strip()
+                  for i in range(n_channels)]
+        n_records = int(header_bytes[236:244].decode('ascii').strip())
+        record_duration = float(header_bytes[244:252].decode('ascii').strip())
+
+        spr_offset = 216 * n_channels
+        samples_per_record = [
+            int(chan_headers[spr_offset + i*8:spr_offset + (i+1)*8].decode('ascii').strip())
+            for i in range(n_channels)
+        ]
+        sfreq = samples_per_record[0] / record_duration
+
+        # Decimation factor (e.g. 2048 → 512 = factor 4)
+        decimate_factor = int(round(sfreq / target_sfreq))
+        actual_sfreq = sfreq / decimate_factor
+        print(f"  Native sfreq: {sfreq:.0f} Hz → decimating by {decimate_factor}x → {actual_sfreq:.0f} Hz")
+
+        prefix = f'{participant}-'
+        keep_idx = [i for i, l in enumerate(labels)
+                    if l.startswith(prefix) or 'Status' in l]
+        keep_labels = [labels[i].replace(prefix, '') for i in keep_idx]
+        n_keep = len(keep_idx)
+        print(f"  Keeping {n_keep} channels: {n_keep-1} EEG + 1 Status")
+
+        bytes_per_sample = 3
+        record_size = sum(s * bytes_per_sample for s in samples_per_record)
+
+        start_record = int(exp_start_time / record_duration)
+        end_record = min(int(np.ceil(exp_end_time / record_duration)) + 1, n_records)
+        total_records = end_record - start_record
+
+        spr_native = samples_per_record[keep_idx[0]]
+        spr_decimated = spr_native // decimate_factor
+        total_samples_out = total_records * spr_decimated
+
+        print(f"  Records: {start_record}–{end_record} ({total_records} records)")
+        print(f"  Output samples: {total_samples_out} (~{total_samples_out/actual_sfreq:.0f}s @ {actual_sfreq:.0f} Hz)")
+        print(f"  Estimated RAM for output array: "
+              f"{n_keep * total_samples_out * 8 / 1024**3:.2f} GiB")
+
+        # Header gains/offsets
+        phys_min = [float(chan_headers[104*n_channels + i*8:104*n_channels + (i+1)*8].decode('ascii').strip())
+                    for i in range(n_channels)]
+        phys_max = [float(chan_headers[112*n_channels + i*8:112*n_channels + (i+1)*8].decode('ascii').strip())
+                    for i in range(n_channels)]
+        dig_min  = [float(chan_headers[120*n_channels + i*8:120*n_channels + (i+1)*8].decode('ascii').strip())
+                    for i in range(n_channels)]
+        dig_max  = [float(chan_headers[128*n_channels + i*8:128*n_channels + (i+1)*8].decode('ascii').strip())
+                    for i in range(n_channels)]
+        gains  = [(phys_max[i] - phys_min[i]) / (dig_max[i] - dig_min[i]) for i in range(n_channels)]
+        offsets = [phys_min[i] - gains[i] * dig_min[i] for i in range(n_channels)]
+
+        # Allocate decimated output only
+        out_data = np.zeros((n_keep, total_samples_out), dtype=np.float32)
+        
+        f.seek(256 * (n_channels + 1) + start_record * record_size)
+
+        for rec_i in range(total_records):
+            record_data = f.read(record_size)
+            if len(record_data) < record_size:
+                break
+
+            sample_out = rec_i * spr_decimated
+
+            for out_i, ch_i in enumerate(keep_idx):
+                ch_offset = sum(samples_per_record[j] * bytes_per_sample for j in range(ch_i))
+                ch_spr = samples_per_record[ch_i]
+                ch_bytes = record_data[ch_offset : ch_offset + ch_spr * bytes_per_sample]
+
+                is_status = 'Status' in labels[ch_i]
+
+                if is_status:
+                    raw_ints = np.array([
+                        struct.unpack('<I', ch_bytes[s*3:s*3+3] + b'\x00')[0] & 0xFFFF
+                        for s in range(ch_spr)
+                    ], dtype=np.float32)
+                    out_data[out_i, sample_out:sample_out + spr_decimated] = raw_ints[::decimate_factor]
+                else:
+                    raw_ints = np.frombuffer(
+                        b''.join(ch_bytes[s*3:s*3+3] +
+                                 (b'\xff' if ch_bytes[s*3+2] & 0x80 else b'\x00')
+                                 for s in range(ch_spr)),
+                        dtype='<i4'
+                    ).astype(np.float32)
+                    scaled = raw_ints * gains[ch_i] + offsets[ch_i]
+                    out_data[out_i, sample_out:sample_out + spr_decimated] = scaled[::decimate_factor]
+
+            if rec_i % 500 == 0:
+                print(f"    Record {rec_i}/{total_records} ({100*rec_i/total_records:.0f}%)")
+
+    ch_types = ['eeg'] * (n_keep - 1) + ['stim']
+    info = mne.create_info(ch_names=keep_labels, sfreq=actual_sfreq, ch_types=ch_types)
+    raw_out = mne.io.RawArray(out_data, info, verbose=False)
+
+    print(f"  Saving to FIF...")
+    raw_out.save(output_path, overwrite=True, verbose=False)
+    print(f"  ✓ Saved: {output_path}")
+    return output_path
 
 # ============================================================================
 # MAIN PREPROCESSING PIPELINE
@@ -189,8 +375,8 @@ def extract_real_trial_events(events, sfreq, epoch_tmin, epoch_tmax):
 
 # Configuration
 DATA_PATH = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\FG_Data_For_Students\RawEEGData_1-4"
-FILE_NAME = '301.bdf'
-PARTICIPANT = 3
+FILE_NAME = '302.bdf'
+PARTICIPANT = 1
 
 # Processing parameters
 FILTER_LOW = 1.0    # Hz highpass filter — removes slow drifts
@@ -208,11 +394,8 @@ BAD_CHANNELS_LOOKUP = {
 }
 
 BAD_EPOCHS_LOOKUP = {
-    # (301, 1): [31, 76, 168, 175, 177, 197, 199, 209, 217, 225, 236, 239, 258, 272],
     (301, 1): [31, 84, 197, 236, 239, 258], 
-    # (301, 2): [1, 5, 6, 7],
-    (301, 2): [0, 1, 16], 
-    # (301, 3): [11, 85, 114, 115, 116, 118, 124, 129, 138, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 161, 163, 164, 165, 166, 171, 172, 187, 189, 196, 199, 207, 208, 211, 213, 214, 215, 219, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 247, 251, 252, 289, 293],
+    (301, 2): [0, 1, 16],
     (301, 3): [143, 145, 147, 148, 149, 150, 152, 154, 155, 156, 157, 231, 233, 234, 236, 237, 238, 239, 247],
 
     # (302, 1): [81, 133, 135, 170, 181, 266, 267], 
@@ -237,6 +420,8 @@ BAD_EPOCHS_LOOKUP = {
     (304, 3): [],
 }
 
+trial_id = int(FILE_NAME.replace('.bdf', ''))
+
 # -------
 # Step 1: Load data
 # -------
@@ -246,10 +431,31 @@ print(f"STEP 1/7: LOAD DATA")
 print(f"File: {FILE_NAME} | Participant {PARTICIPANT}")
 print(f"{'='*70}")
 
-raw = mne.io.read_raw_bdf(file_path, preload=False)
-participant_channels = [ch for ch in raw.ch_names if ch.startswith(f'{PARTICIPANT}-')]
-stimulus_channels = [ch for ch in raw.ch_names if 'Status' in ch or 'STI' in ch]
-raw_p = raw.copy().pick(participant_channels + stimulus_channels)
+# Find crop boundaries from BDF directly (no RAM spike)
+exp_start_time, last_trial_time, native_sfreq = find_exp_start_from_bdf(file_path)
+exp_end_time = last_trial_time + EPOCH_TMAX + 1.0
+
+print(f"  Cropping to: {exp_start_time:.2f}s → {exp_end_time:.2f}s  "
+      f"({exp_end_time - exp_start_time:.0f}s total)")
+
+# Extract only needed channels to a temp FIF (bypasses BDF full-width buffer)
+import tempfile
+temp_fif = os.path.join(tempfile.gettempdir(), f"temp_{trial_id}_p{PARTICIPANT}_raw.fif")
+extract_bdf_to_fif(
+    file_path,
+    PARTICIPANT,
+    exp_start_time,
+    exp_end_time,
+    temp_fif,
+    target_sfreq=RESAMPLE_FREQ
+)
+
+# Load the small FIF — no memory issues
+raw_p = mne.io.read_raw_fif(temp_fif, preload=False, verbose=False)
+print(f"  ✓ Loaded from FIF: {len(raw_p.ch_names)} channels")
+participant_channels = [
+    ch for ch in raw_p.ch_names if ch.startswith(f'{PARTICIPANT}-')
+]
 
 # -------
 # Step 2: Filter and resample
@@ -257,14 +463,12 @@ raw_p = raw.copy().pick(participant_channels + stimulus_channels)
 print(f"\n{'='*70}")
 print("STEP 2/7: FILTER AND RESAMPLE")
 print(f"{'='*70}")
+
 raw_p.load_data()
-print(f"  Loaded: {len(raw_p.ch_names)} channels")
+print(f"  Loaded: {len(raw_p.ch_names)} channels at {raw_p.info['sfreq']:.0f} Hz")
 
 print(f"  Filtering: {FILTER_LOW}–{FILTER_HIGH} Hz (Hamming)")
 raw_p.filter(l_freq=FILTER_LOW, h_freq=FILTER_HIGH, fir_design='firwin', verbose=False)
-
-print(f"  Resampling: {RESAMPLE_FREQ} Hz")
-raw_p.resample(sfreq=RESAMPLE_FREQ, npad='auto')
 
 # -------
 # Step 3: Bad channel interpolation
@@ -278,7 +482,7 @@ channel_mapping = {ch: ch.replace(f'{PARTICIPANT}-', '') for ch in participant_c
 raw_p.rename_channels(channel_mapping)
 
 # Look up predefined bad channels
-trial_id = int(FILE_NAME.replace('.bdf', ''))
+# trial_id = int(FILE_NAME.replace('.bdf', ''))
 bad_channels = BAD_CHANNELS_LOOKUP.get((trial_id, PARTICIPANT), [])
 raw_p.info['bads'] = bad_channels
 
