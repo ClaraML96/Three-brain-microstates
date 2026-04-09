@@ -19,8 +19,8 @@ matplotlib.use("TkAgg")
 DATA_DIR = r"C:\\Users\\clara\\OneDrive - Danmarks Tekniske Universitet\\Skrivebord\\DTU\\Human Centeret Artificial Intelligence\\Thesis\\data\\preprocessed"
 ICA_DIR = r"C:\\Users\\clara\\OneDrive - Danmarks Tekniske Universitet\\Skrivebord\\DTU\\Human Centeret Artificial Intelligence\\Thesis\\data\\ica_cleaned"
 
-PARTICIPANT_ID = "304"
-PARTICIPANT = 3
+PARTICIPANT_ID = "302"
+PARTICIPANT = 2
 
 EPOCH_FILE = os.path.join(DATA_DIR, f"{PARTICIPANT_ID}_p{PARTICIPANT}_clean-epo.fif")
 ICA_FILE = os.path.join(ICA_DIR, f"{PARTICIPANT_ID}_p{PARTICIPANT}-ica.fif")
