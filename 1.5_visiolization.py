@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 # ============================================================================
 
 DATA_PATH = r"C:\\Users\\clara\\OneDrive - Danmarks Tekniske Universitet\\Skrivebord\\DTU\\Human Centeret Artificial Intelligence\\Thesis\\data\\preprocessed\\"
-PARTICIPANT_ID = 303
+PARTICIPANT_ID = 304
 PARTICIPANT = 3
 
 # Path to your already processed data

@@ -476,7 +476,7 @@ def run_pipeline():
                     _, motor_trials = extract_channel_data(cond_epochs, MOTOR_CHANNEL, BASELINE)
 
                     # Average trials to create the single ERP waveform for this person
-                    participant_erps_occ[cond_key].append(occ_trials.mean(axis=0))
+                    participant_erps_occ[cond_key].append(occ_trials.mean(axis=0)) # Averaging across
                     participant_erps_motor[cond_key].append(motor_trials.mean(axis=0))
         except FileNotFoundError:
             continue
