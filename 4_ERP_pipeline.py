@@ -195,9 +195,11 @@ def compute_grand_average(participant_erps):
     ci    = 1.96 * se if ERROR_TYPE == "ci95" else se
 
     if SMOOTH_SIGMA > 0:
-        mean  = gaussian_filter1d(mean,       SMOOTH_SIGMA)
-        lower = gaussian_filter1d(mean - ci,  SMOOTH_SIGMA)
-        upper = gaussian_filter1d(mean + ci,  SMOOTH_SIGMA)
+        lower = mean - ci
+        upper = mean + ci
+        mean  = gaussian_filter1d(mean,  SMOOTH_SIGMA)
+        lower = gaussian_filter1d(lower, SMOOTH_SIGMA)
+        upper = gaussian_filter1d(upper, SMOOTH_SIGMA)
     else:
         lower = mean - ci
         upper = mean + ci
@@ -476,7 +478,7 @@ def run_pipeline():
                     _, motor_trials = extract_channel_data(cond_epochs, MOTOR_CHANNEL, BASELINE)
 
                     # Average trials to create the single ERP waveform for this person
-                    participant_erps_occ[cond_key].append(occ_trials.mean(axis=0)) # Averaging across
+                    participant_erps_occ[cond_key].append(occ_trials.mean(axis=0))  # Averaging across participant
                     participant_erps_motor[cond_key].append(motor_trials.mean(axis=0))
         except FileNotFoundError:
             continue
