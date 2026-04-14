@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 # CONFIGURATION
 # ------------------------------------------------------------
 
-DATA_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\preprocessed"
+Path = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\preprocessed"
 
 participants = [
     ("301",1),
@@ -35,7 +35,7 @@ for pid, part in participants:
     print(f"\nProcessing {pid} participant {part}")
 
     epoch_file = os.path.join(
-        DATA_DIR,
+        Path,
         f"{pid}_p{part}_clean-epo.fif"
     )
 

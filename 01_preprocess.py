@@ -379,8 +379,8 @@ def extract_bdf_to_fif(file_path, participant, exp_start_time, exp_end_time, out
 
 # Configuration
 DATA_PATH = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\FG_Data_For_Students\RawEEGData_1-4"
-FILE_NAME = '304.bdf'
-PARTICIPANT = 3
+FILE_NAME = '302.bdf'
+PARTICIPANT = 2
 
 # Processing parameters
 FILTER_LOW = 1.0    # Hz highpass filter — removes slow drifts
@@ -403,7 +403,7 @@ BAD_EPOCHS_LOOKUP = {
     (301, 3): [143, 145, 147, 148, 149, 150, 152, 154, 155, 156, 157, 231, 233, 234, 236, 237, 238, 239, 247],
 
     (302, 1): [80, 134, 180, 265, 266],
-    (302, 2): [20, 21, 33, 42, 43, 65, 66, 67, 70, 90, 91, 93, 95, 97, 98, 117, 125, 126, 128, 132, 133, 147, 160, 200, 201, 220, 222, 226, 249, 250, 254, 265, 266, 268, 269, 270, 276, 277, 290, 291, 292],
+    (302, 2): [80, 82, 109],
     (302, 3): [80, 287],
 
     (303, 1): [10, 260, 295],
