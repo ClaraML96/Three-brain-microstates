@@ -13,6 +13,18 @@ participants = [
     ("301",1),
     ("301",2),
     ("301",3),
+
+    # ("302",1),
+    # ("302",2),
+    # ("302",3),
+    
+    # ("303",1),
+    # ("303",2),
+    # ("303",3),
+    
+    # ("304",1),
+    # ("304",2),
+    # ("304",3),
 ]
 
 # Morlet parameters
@@ -43,8 +55,10 @@ for pid, part in participants:
 
     for condition in epochs.event_id:
 
+        # select epochs for condition
         epochs_cond = epochs[condition]
 
+        # compute time-frequency power per epoch
         tfr = epochs_cond.compute_tfr(
             method="morlet",
             freqs=foi,
@@ -53,10 +67,12 @@ for pid, part in participants:
             average=False
         )
 
+        # Computing ERD
         tfr_avg = tfr.average()
         tfr_avg.apply_baseline(baseline_window, mode="percent")
         tfr_avg.data *= 100
 
+        # Store for group averaging
         if condition not in group_tfr:
             group_tfr[condition] = []
 
