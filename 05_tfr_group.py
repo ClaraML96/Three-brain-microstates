@@ -7,24 +7,15 @@ import matplotlib.pyplot as plt
 # CONFIGURATION
 # ------------------------------------------------------------
 
-Path = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\preprocessed"
+data_path = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\preprocessed"
+save_path = os.path.join(data_path, "tfr")
+os.makedirs(save_path, exist_ok=True)
 
 participants = [
-    ("301",1),
-    ("301",2),
-    ("301",3),
-
-    ("302",1),
-    ("302",2),
-    ("302",3),
-    
-    ("303",1),
-    ("303",2),
-    ("303",3),
-    
-    ("304",1),
-    ("304",2),
-    ("304",3),
+    ("301", 1), ("301", 2), ("301", 3),
+    ("302", 1), ("302", 2), ("302", 3),
+    ("303", 1), ("303", 2), ("303", 3),
+    ("304", 1), ("304", 2), ("304", 3),
 ]
 
 # Morlet parameters
@@ -32,71 +23,45 @@ foi = np.linspace(1,30,30,dtype=int)
 n_cycles = 3 + 0.5 * foi
 baseline_window = (-0.25,0)
 
-# ------------------------------------------------------------
-# STORAGE
-# ------------------------------------------------------------
-
-group_tfr = {}
+channels_of_interest = ["C3", "O1", "O2", "Oz"]
 
 # ------------------------------------------------------------
-# LOOP OVER SUBJECTS
+# COMPUTE & SAVE
 # ------------------------------------------------------------
-
 for pid, part in participants:
+    print(f"\n{pid} part {part}")
 
-    print(f"\nProcessing {pid} participant {part}")
-
-    epoch_file = os.path.join(
-        Path,
-        f"{pid}_p{part}_clean-epo.fif"
-    )
-
+    epoch_file = os.path.join(data_path, f"{pid}_p{part}_clean-epo.fif")
     epochs = mne.read_epochs(epoch_file, preload=True)
 
-    for condition in epochs.event_id:
+    # Restrict to channels of interest early → saves memory & time
+    epochs.pick(channels_of_interest)
 
-        # select epochs for condition
+    for condition in epochs.event_id:
+        save_file = os.path.join(
+            save_path,
+            f"tfr_{pid}_p{part}_{condition}-tfr.h5"   # MNE's native TFR format
+        )
+
+        if os.path.exists(save_file):
+            print(f"  {condition}: already exists, skipping.")
+            continue
+
+        print(f"  Computing TFR for condition: {condition}")
         epochs_cond = epochs[condition]
 
-        # compute time-frequency power per epoch
         tfr = epochs_cond.compute_tfr(
             method="morlet",
             freqs=foi,
             n_cycles=n_cycles,
             return_itc=False,
-            average=False
+            average=False,          
         )
 
-        # Computing ERD
+        # Average across epochs, then baseline-correct → ERD%
         tfr_avg = tfr.average()
         tfr_avg.apply_baseline(baseline_window, mode="percent")
-        tfr_avg.data *= 100
+        tfr_avg.data *= 100         # now in ERD% units
 
-        # Store for group averaging
-        if condition not in group_tfr:
-            group_tfr[condition] = []
-
-        group_tfr[condition].append(tfr_avg)
-
-# ------------------------------------------------------------
-# AVERAGE ACROSS SUBJECTS
-# ------------------------------------------------------------
-
-group_avg = {}
-
-for condition, tfr_list in group_tfr.items():
-
-    group_avg[condition] = mne.grand_average(tfr_list)
-
-# ------------------------------------------------------------
-# PLOT RESULTS
-# ------------------------------------------------------------
-
-for condition, tfr in group_avg.items():
-
-    tfr.plot(
-        picks="C3", # change to O1/O2/Oz later
-        title=f"Group TFR ({condition})"
-    )
-
-plt.show()
+        tfr_avg.save(save_file, overwrite=True)
+        print(f"  Saved → {save_file}")

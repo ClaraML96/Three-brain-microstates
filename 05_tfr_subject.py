@@ -81,8 +81,10 @@ for condition in epochs.event_id:
 for condition, tfr in tfr_results.items():
 
     tfr.plot(
-        picks="C3",   # change to O1/O2/Oz later
-        title=f"TFR Power - {condition} (C3)",
+        picks=["O1", "O2", "Oz"],
+        # picks="C3",   # change to O1/O2/Oz later
+        title=f"TFR Power - {condition} (O1/O2/Oz)",
+        # title=f"TFR Power - {condition} (C3)",
         baseline=None
     )
 
