@@ -6,9 +6,10 @@ import matplotlib.pyplot as plt
 # ------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------
-save_path = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\preprocessed\tfr"
-erd_path = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\figures\erd"
-tfr_path = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\figures\tfr"
+DATA_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\preprocessed"
+
+output_dir = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\figures\erd"
+os.makedirs(output_dir, exist_ok=True)
 
 participants = [
     ("301", 1), ("301", 2), ("301", 3),
@@ -17,8 +18,7 @@ participants = [
     ("304", 1), ("304", 2), ("304", 3),
 ]
 
-# Auto-discovered from your filenames
-conditions = [f"Condition_{i}" for i in range(10)]
+channels_of_interest = ["C3", "O1", "O2", "Oz"]
 
 freq_bands = {
     "theta": (4,  7),
@@ -26,35 +26,59 @@ freq_bands = {
     "beta":  (13, 30),
 }
 
-channels_of_interest = ["C3", "O1", "O2", "Oz"]
-
-# ------------------------------------------------------------
-# LOAD & GROUP
-# ------------------------------------------------------------
-group_tfr = {}  # {condition: [tfr_sub1, tfr_sub2, ...]}
-
-for pid, part in participants:
-    for condition in conditions:
-        fname = os.path.join(save_path, f"tfr_{pid}_p{part}_{condition}-tfr.h5")
-        if not os.path.exists(fname):
-            print(f"Missing: {fname}, skipping.")
-            continue
-
-        tfr_list = mne.time_frequency.read_tfrs(fname)
-        tfr = tfr_list[0] if isinstance(tfr_list, list) else tfr_list
-        group_tfr.setdefault(condition, []).append(tfr)
-
-print("\nLoaded conditions:")
-for cond, lst in group_tfr.items():
-    print(f"  {cond}: {len(lst)} subjects")
-
-# ------------------------------------------------------------
-# GROUP AVERAGE
-# ------------------------------------------------------------
-group_avg = {
-    condition: mne.grand_average(tfr_list)
-    for condition, tfr_list in group_tfr.items()
+band_colors = {
+    "theta": "steelblue",
+    "alpha": "darkorange",
+    "beta":  "seagreen",
 }
+
+# Morlet parameters
+foi = np.linspace(1, 30, 30, dtype=int)
+n_cycles = 3 + 0.5 * foi
+baseline_window = (-0.25, 0)
+
+# ------------------------------------------------------------
+# STORAGE
+# ------------------------------------------------------------
+group_tfr = {}
+
+# ------------------------------------------------------------
+# LOOP OVER SUBJECTS
+# ------------------------------------------------------------
+for pid, part in participants:
+    print(f"\nProcessing participant {pid}, part {part}")
+
+    epoch_file = os.path.join(DATA_DIR, f"{pid}_p{part}_clean-epo.fif")
+    epochs = mne.read_epochs(epoch_file, preload=True)
+    epochs.pick(channels_of_interest)
+
+    for condition in epochs.event_id:
+        print(f"  Computing TFR for condition: {condition}")
+        epochs_cond = epochs[condition]
+
+        tfr = epochs_cond.compute_tfr(
+            method="morlet",
+            freqs=foi,
+            n_cycles=n_cycles,
+            return_itc=False,
+            average=False
+        )
+
+        tfr_avg = tfr.average()
+        tfr_avg.apply_baseline(baseline_window, mode="percent")
+        tfr_avg.data *= 100
+
+        if condition not in group_tfr:
+            group_tfr[condition] = []
+        group_tfr[condition].append(tfr_avg)
+
+# ------------------------------------------------------------
+# GRAND AVERAGE ACROSS SUBJECTS
+# ------------------------------------------------------------
+group_avg = {}
+for condition, tfr_list in group_tfr.items():
+    group_avg[condition] = mne.grand_average(tfr_list)
+    print(f"Grand average computed for condition: {condition}")
 
 # ------------------------------------------------------------
 # HELPER: BAND-AVERAGED ERD TIME COURSE
@@ -63,62 +87,40 @@ def band_erd(tfr, channel, fmin, fmax):
     """Returns ERD% time course averaged across [fmin, fmax] Hz for one channel."""
     ch_idx = tfr.ch_names.index(channel)
     f_mask = (tfr.freqs >= fmin) & (tfr.freqs <= fmax)
-    return tfr.data[ch_idx, f_mask, :].mean(axis=0)  # shape: (n_times,)
+    return tfr.data[ch_idx, f_mask, :].mean(axis=0)
 
 # ------------------------------------------------------------
-# PLOT: BAND ERD TIME COURSES — one figure per channel
+# PLOT: one figure per condition, 2x2 subplots (one per channel)
+#        each subplot shows one line per frequency band
 # ------------------------------------------------------------
-for channel in channels_of_interest:
-    n_bands = len(freq_bands)
-    n_conds = len(group_avg)
+times = group_avg[list(group_avg.keys())[0]].times
 
-    fig, axes = plt.subplots(
-        n_bands, n_conds,
-        figsize=(4 * n_conds, 3 * n_bands),
-        sharex=True, sharey="row"
-    )
+for condition, tfr in group_avg.items():
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10), sharey=True)
+    axes = axes.flatten()
 
-    # Always work with a 2D array
-    if n_bands == 1:
-        axes = axes[np.newaxis, :]
-    if n_conds == 1:
-        axes = axes[:, np.newaxis]
-
-    for col, (condition, tfr) in enumerate(group_avg.items()):
-        for row, (band_name, (fmin, fmax)) in enumerate(freq_bands.items()):
-            ax = axes[row, col]
+    for ax, channel in zip(axes, channels_of_interest):
+        for band_name, (fmin, fmax) in freq_bands.items():
             erd = band_erd(tfr, channel, fmin, fmax)
+            ax.plot(
+                times, erd,
+                lw=1.8,
+                color=band_colors[band_name],
+                label=f"{band_name} ({fmin}–{fmax} Hz)"
+            )
 
-            ax.plot(tfr.times, erd, lw=1.8, color="steelblue")
-            ax.axhline(0, color="k", lw=0.8, ls="--")
-            ax.axvspan(-0.25, 0, color="gray", alpha=0.15, label="baseline")
-            ax.axvline(0, color="gray", lw=0.8, ls=":")  # stimulus onset
+        ax.axhline(0, color="k", lw=0.8, ls="--")
+        ax.axvspan(baseline_window[0], baseline_window[1], color="gray", alpha=0.15)
+        ax.axvline(0, color="gray", lw=0.8, ls=":")  # stimulus onset
+        ax.set_title(channel)
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("ERD/ERS (%)")
+        ax.legend(fontsize=8, loc="upper left")
 
-            if row == 0:
-                ax.set_title(condition, fontsize=10)
-            if col == 0:
-                ax.set_ylabel(f"{band_name}\n({fmin}–{fmax} Hz)\nERD (%)", fontsize=9)
-            if row == n_bands - 1:
-                ax.set_xlabel("Time (s)")
+    fig.suptitle(f"ERD/ERS — {condition}", fontsize=14, fontweight="bold")
+    plt.tight_layout()
 
-    fig.suptitle(f"Band ERD — {channel}", fontsize=13, fontweight="bold")
-    fig.tight_layout()
-    fig.savefig(os.path.join(erd_path, f"erd_band_{channel}.png"), dpi=150)
-    print(f"Saved figure: erd_band_{channel}.png")
-
-# ------------------------------------------------------------
-# Plotting TFR power spectrum distribution
-# ------------------------------------------------------------
-for channel in channels_of_interest:
-    for condition, tfr in group_avg.items():
-        fig = tfr.plot(
-            picks=channel,
-            title=f"Group TFR — {channel} | {condition}",
-            vlim=(-50, 50),      # ← replaces vmin/vmax in newer MNE
-            cmap="RdBu_r",
-            show=False,
-        )
-        out_name = f"tfr_heatmap_{channel}_{condition}.png"
-        fig[0].savefig(os.path.join(tfr_path, out_name), dpi=150)
-        plt.close(fig[0])
-        print(f"Saved: {out_name}")
+    output_file = os.path.join(output_dir, f"erd_{condition}.png")
+    fig.savefig(output_file, dpi=300, bbox_inches="tight")
+    print(f"Saved: {output_file}")
+    plt.close(fig)
