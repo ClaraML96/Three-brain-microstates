@@ -107,7 +107,7 @@ for channel in channels_of_interest:
     print(f"Saved figure: erd_band_{channel}.png")
 
 # ------------------------------------------------------------
-# PLOT: FULL TFR HEATMAPS — one per channel × condition
+# Plotting TFR power spectrum distribution
 # ------------------------------------------------------------
 for channel in channels_of_interest:
     for condition, tfr in group_avg.items():
