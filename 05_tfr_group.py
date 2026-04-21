@@ -25,7 +25,7 @@ baseline_window = (-0.25, 0)
 # ------------------------------------------------------------
 # STORAGE
 # ------------------------------------------------------------
-group_tfr = {}  # { condition: [tfr_avg_sub1, tfr_avg_sub2, ...] }
+group_tfr = {}  
 
 # ------------------------------------------------------------
 # LOOP OVER SUBJECTS
@@ -36,29 +36,29 @@ for pid, part in participants:
     epoch_file = os.path.join(DATA_DIR, f"{pid}_p{part}_clean-epo.fif")
     epochs = mne.read_epochs(epoch_file, preload=True)
 
-    # Pick only channels of interest early to save memory
+    # Pick only channels of interest 
     epochs.pick(channels_of_interest)
 
     for condition in epochs.event_id:
         print(f"  Computing TFR for condition: {condition}")
         epochs_cond = epochs[condition]
 
-        # STEP 1: Compute TFR per epoch (average=False keeps individual epochs)
+        # Compute TFR per epoch
         tfr = epochs_cond.compute_tfr(
             method="morlet",
             freqs=foi,
             n_cycles=n_cycles,
             return_itc=False,
-            average=False       # Keep individual epochs
+            average=False       
         )
 
-        # STEP 2: Average across epochs
+        # Average across epochs
         tfr_avg = tfr.average()
 
-        # STEP 3: Baseline correction (percent = (A - R) / R)
+        # Baseline correction (percent = (A - R) / R)
         tfr_avg.apply_baseline(baseline_window, mode="percent")
 
-        # STEP 4: Multiply by 100 to get actual percentage (ERD/ERS %)
+        # Multiply by 100 to get actual percentage (ERD/ERS %)
         tfr_avg.data *= 100
 
         # Store per subject
@@ -67,7 +67,7 @@ for pid, part in participants:
         group_tfr[condition].append(tfr_avg)
 
 # ------------------------------------------------------------
-# GRAND AVERAGE ACROSS SUBJECTS
+# AVERAGE ACROSS SUBJECTS
 # ------------------------------------------------------------
 group_avg = {}
 for condition, tfr_list in group_tfr.items():
