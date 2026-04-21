@@ -81,7 +81,7 @@ for condition, tfr_list in group_tfr.items():
     print(f"Grand average computed for condition: {condition}")
 
 # ------------------------------------------------------------
-# HELPER: BAND-AVERAGED ERD TIME COURSE
+# BAND-AVERAGED ERD TIME COURSE 
 # ------------------------------------------------------------
 def band_erd(tfr, channel, fmin, fmax):
     """Returns ERD% time course averaged across [fmin, fmax] Hz for one channel."""
