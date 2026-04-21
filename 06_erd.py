@@ -43,7 +43,7 @@ baseline_window = (-0.25, 0)
 group_tfr = {}
 
 # ------------------------------------------------------------
-# LOOP OVER SUBJECTS
+# LOOP OVER PARTICIPANTS
 # ------------------------------------------------------------
 for pid, part in participants:
     print(f"\nProcessing participant {pid}, part {part}")
