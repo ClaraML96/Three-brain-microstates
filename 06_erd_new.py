@@ -21,27 +21,50 @@ participants = [
 channels_of_interest = ["C3", "O1", "O2", "Oz"]
 
 freq_bands = {
-    "theta": (4,  7),
     "alpha": (8, 12),
     "beta":  (13, 30),
 }
 
-# One color per condition — adjust if you have more/fewer conditions
-condition_colors = [
-    "steelblue", "darkorange", "seagreen", "firebrick",
-    "mediumpurple", "saddlebrown", "deeppink", "gray",
-    "olive", "teal"
-]
+# Mapping from raw condition names to readable labels
+condition_labels = {
+    "Condition_0": "Solo — No Feedback",
+    "Condition_1": "Solo — With Feedback",
+    "Condition_2": "Duo P1+P2 — No Feedback",
+    "Condition_3": "Duo P1+P2 — With Feedback",
+    "Condition_4": "Duo P1+P3 — No Feedback",
+    "Condition_5": "Duo P1+P3 — With Feedback",
+    "Condition_6": "Duo P2+P3 — No Feedback",
+    "Condition_7": "Duo P2+P3 — With Feedback",
+    "Condition_8": "Trio — No Feedback",
+    "Condition_9": "Trio — With Feedback",
+}
+
+# Colors matching paper style: cool for no feedback, warm for with feedback
+condition_colors = {
+    "Condition_0": "steelblue",
+    "Condition_1": "firebrick",
+    "Condition_2": "cornflowerblue",
+    "Condition_3": "darkorange",
+    "Condition_4": "royalblue",
+    "Condition_5": "sandybrown",
+    "Condition_6": "dodgerblue",
+    "Condition_7": "peru",
+    "Condition_8": "seagreen",
+    "Condition_9": "darkred",
+}
 
 # Morlet parameters
 foi = np.linspace(1, 30, 30, dtype=int)
 n_cycles = 3 + 0.5 * foi
 baseline_window = (-0.25, 0)
 
+# Time window to plot (matching paper)
+plot_tmin, plot_tmax = 0.0, 4.0
+
 # ------------------------------------------------------------
-# STORAGE — keep individual subject TFRs for CI computation
+# STORAGE
 # ------------------------------------------------------------
-group_tfr = {}  # { condition: [tfr_sub1, tfr_sub2, ...] }
+group_tfr = {}
 
 # ------------------------------------------------------------
 # LOOP OVER PARTICIPANTS
@@ -74,64 +97,70 @@ for pid, part in participants:
         group_tfr[condition].append(tfr_avg)
 
 # ------------------------------------------------------------
-# HELPER: band-averaged ERD per subject → mean + SEM
+# HELPERS
 # ------------------------------------------------------------
 def band_erd(tfr, channel, fmin, fmax):
-    """Returns ERD% time course averaged across [fmin, fmax] Hz for one channel."""
     ch_idx = tfr.ch_names.index(channel)
     f_mask = (tfr.freqs >= fmin) & (tfr.freqs <= fmax)
-    return tfr.data[ch_idx, f_mask, :].mean(axis=0)  # shape: (n_times,)
+    return tfr.data[ch_idx, f_mask, :].mean(axis=0)
 
 def group_mean_sem(tfr_list, channel, fmin, fmax):
-    """Returns mean and SEM across subjects for a given channel and frequency band."""
-    # Stack ERD time courses across subjects: shape (n_subjects, n_times)
     subject_erds = np.array([band_erd(tfr, channel, fmin, fmax) for tfr in tfr_list])
     mean = subject_erds.mean(axis=0)
     sem = subject_erds.std(axis=0) / np.sqrt(len(subject_erds))
     return mean, sem
 
 # ------------------------------------------------------------
-# Get time axis from first available TFR
+# Get time axis and mask to 0–4s for plotting
 # ------------------------------------------------------------
 first_condition = list(group_tfr.keys())[0]
 times = group_tfr[first_condition][0].times
+time_mask = (times >= plot_tmin) & (times <= plot_tmax)
+times_plot = times[time_mask]
+
 conditions = list(group_tfr.keys())
 
 # ------------------------------------------------------------
 # PLOT: one figure per channel
-#        one subplot per frequency band
+#        one subplot per frequency band (alpha, beta)
 #        one line per condition with shaded SEM
 # ------------------------------------------------------------
 for channel in channels_of_interest:
-    n_bands = len(freq_bands)
-    fig, axes = plt.subplots(1, n_bands, figsize=(6 * n_bands, 5), sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
 
     for ax, (band_name, (fmin, fmax)) in zip(axes, freq_bands.items()):
-        for i, condition in enumerate(conditions):
-            color = condition_colors[i % len(condition_colors)]
+        for condition in conditions:
+            if condition not in condition_labels:
+                continue
+
+            color = condition_colors.get(condition, "gray")
+            label = condition_labels[condition]
             mean, sem = group_mean_sem(group_tfr[condition], channel, fmin, fmax)
 
-            # Plot mean line
-            ax.plot(times, mean, lw=1.8, color=color, label=condition)
-            # Plot shaded confidence interval (±1 SEM)
-            ax.fill_between(times, mean - sem, mean + sem, alpha=0.2, color=color)
+            # Crop to 0–4s for plotting only
+            mean_plot = mean[time_mask]
+            sem_plot = sem[time_mask]
+
+            ax.plot(times_plot, mean_plot, lw=1.8, color=color, label=label)
+            ax.fill_between(times_plot, mean_plot - sem_plot, mean_plot + sem_plot,
+                            alpha=0.2, color=color)
 
         ax.axhline(0, color="k", lw=0.8, ls="--")
-        ax.axvspan(baseline_window[0], baseline_window[1], color="gray", alpha=0.1)
         ax.axvline(0, color="gray", lw=0.8, ls=":")
+        ax.set_xlim(plot_tmin, plot_tmax)
         ax.set_title(band_name.capitalize(), fontsize=12, fontweight="bold")
         ax.set_xlabel("Time (s)")
         if ax == axes[0]:
-            ax.set_ylabel("ERD/ERS (%)")
+            ax.set_ylabel("Power (%)")
 
-    # Shared legend outside the subplots
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper right", fontsize=8, framealpha=0.8)
+    fig.legend(handles, labels, loc="upper right", fontsize=8, framealpha=0.8,
+               bbox_to_anchor=(1.18, 1.0))
 
     fig.suptitle(f"ERD/ERS — {channel}", fontsize=14, fontweight="bold")
     plt.tight_layout()
 
-    output_file = os.path.join(output_dir, f"erd_bands_{channel}.png")
+    output_file = os.path.join(output_dir, f"erd_alphabeta_{channel}.png")
     fig.savefig(output_file, dpi=300, bbox_inches="tight")
     print(f"Saved: {output_file}")
     plt.close(fig)
