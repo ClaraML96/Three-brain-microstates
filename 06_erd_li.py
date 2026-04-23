@@ -6,17 +6,22 @@ import matplotlib.pyplot as plt
 # ------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------
-DATA_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\preprocessed"
+# Use two preprocessed epochs files.
+EPOCH_FILE_A = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\FG_Data_For_Students\PreprocessedEEGData\301A_FG_preprocessed-epo.fif"
+EPOCH_FILE_B = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\FG_Data_For_Students\PreprocessedEEGData\301B_FG_preprocessed-epo.fif"
+EPOCH_FILES = [EPOCH_FILE_A, EPOCH_FILE_B]
 
 output_dir = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\figures\erd"
 os.makedirs(output_dir, exist_ok=True)
 
-participants = [
-    ("301", 1), ("301", 2), ("301", 3),
-    ("302", 1), ("302", 2), ("302", 3),
-    ("303", 1), ("303", 2), ("303", 3),
-    ("304", 1), ("304", 2), ("304", 3),
-]
+# for epoch_file in EPOCH_FILES:
+#     print(f"\nProcessing file: {os.path.basename(epoch_file)}")
+#     epochs = mne.read_epochs(epoch_file, preload=False)  # preload=False just for inspection
+    
+#     print("Conditions found:")
+#     for condition, code in epochs.event_id.items():
+#         n_trials = len(epochs[condition])
+#         print(f"  '{condition}' (code {code}): {n_trials} trials")
 
 channels_of_interest = ["C3", "O1", "O2", "Oz"]
 
@@ -26,29 +31,29 @@ freq_bands = {
 }
 
 condition_labels = {
-    "Condition_0": "Solo — With Feedback",    # was No Feedback
-    "Condition_1": "Solo — No Feedback",       # was With Feedback
-    "Condition_2": "Duo P1+P2 — With Feedback",
-    "Condition_3": "Duo P1+P2 — No Feedback",
-    "Condition_4": "Duo P1+P3 — With Feedback",
-    "Condition_5": "Duo P1+P3 — No Feedback",
-    "Condition_6": "Duo P2+P3 — With Feedback",
-    "Condition_7": "Duo P2+P3 — No Feedback",
-    "Condition_8": "Trio — With Feedback",
-    "Condition_9": "Trio — No Feedback",
+    "T1P":   "Solo — With Feedback",
+    "T1Pn":  "Solo — No Feedback",
+    "T3P":   "Trio — With Feedback",
+    "T3Pn":  "Trio — No Feedback",
+    "T12P":  "Duo P1+P2 — With Feedback",
+    "T12Pn": "Duo P1+P2 — No Feedback",
+    "T13P":  "Duo P1+P3 — With Feedback",
+    "T13Pn": "Duo P1+P3 — No Feedback",
+    "T23P":  "Duo P2+P3 — With Feedback",
+    "T23Pn": "Duo P2+P3 — No Feedback",
 }
 
 condition_colors = {
-    "Condition_0": "firebrick",      # Solo With Feedback → warm
-    "Condition_1": "steelblue",      # Solo No Feedback → cool
-    "Condition_2": "darkorange",     # Duo With Feedback → warm
-    "Condition_3": "cornflowerblue", # Duo No Feedback → cool
-    "Condition_4": "sandybrown",
-    "Condition_5": "royalblue",
-    "Condition_6": "peru",
-    "Condition_7": "dodgerblue",
-    "Condition_8": "darkred",        # Trio With Feedback → warm
-    "Condition_9": "seagreen",       # Trio No Feedback → cool
+    "T1P":   "firebrick",
+    "T1Pn":  "steelblue",
+    "T3P":   "darkred",
+    "T3Pn":  "seagreen",
+    "T12P":  "darkorange",
+    "T12Pn": "cornflowerblue",
+    "T13P":  "sandybrown",
+    "T13Pn": "royalblue",
+    "T23P":  "peru",
+    "T23Pn": "dodgerblue",
 }
 
 # Morlet parameters
@@ -65,12 +70,13 @@ plot_tmin, plot_tmax = 0.0, 4.0
 group_tfr = {}
 
 # ------------------------------------------------------------
-# LOOP OVER PARTICIPANTS
+# LOAD PREPROCESSED FILES
 # ------------------------------------------------------------
-for pid, part in participants:
-    print(f"\nProcessing participant {pid}, part {part}")
+for epoch_file in EPOCH_FILES:
+    if not os.path.isfile(epoch_file):
+        raise FileNotFoundError(f"Could not find epochs file: {epoch_file}")
 
-    epoch_file = os.path.join(DATA_DIR, f"{pid}_p{part}_clean-epo.fif")
+    print(f"\nProcessing file: {os.path.basename(epoch_file)}")
     epochs = mne.read_epochs(epoch_file, preload=True)
     epochs.pick(channels_of_interest)
 
@@ -130,6 +136,9 @@ for channel in channels_of_interest:
         for condition in conditions:
             if condition not in condition_labels:
                 continue
+            # if condition not in condition_labels:
+            #     print(f"WARNING: '{condition}' not in condition_labels, skipping")
+            #     continue
 
             color = condition_colors.get(condition, "gray")
             label = condition_labels[condition]
@@ -155,10 +164,10 @@ for channel in channels_of_interest:
     fig.legend(handles, labels, loc="upper right", fontsize=8, framealpha=0.8,
                bbox_to_anchor=(1.18, 1.0))
 
-    fig.suptitle(f"ERD/ERS — {channel}", fontsize=14, fontweight="bold")
+    fig.suptitle(f"ERD/ERS_li — {channel}", fontsize=14, fontweight="bold")
     plt.tight_layout()
 
-    output_file = os.path.join(output_dir, f"erd_alphabeta_{channel}.png")
+    output_file = os.path.join(output_dir, f"erd_alphabeta_li_{channel}.png")
     fig.savefig(output_file, dpi=300, bbox_inches="tight")
     print(f"Saved: {output_file}")
     plt.close(fig)
