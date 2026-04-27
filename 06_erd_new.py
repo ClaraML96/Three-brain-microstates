@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 # ------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------
-DATA_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\preprocessed"
+DATA_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\ica_cleaned"
 
 output_dir = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\figures\erd"
 os.makedirs(output_dir, exist_ok=True)
@@ -70,7 +70,7 @@ group_tfr = {}
 for pid, part in participants:
     print(f"\nProcessing participant {pid}, part {part}")
 
-    epoch_file = os.path.join(DATA_DIR, f"{pid}_p{part}_clean-epo.fif")
+    epoch_file = os.path.join(DATA_DIR, f"{pid}_p{part}_ica_cleaned-epo.fif")
     epochs = mne.read_epochs(epoch_file, preload=True)
     epochs.pick(channels_of_interest)
 

@@ -41,7 +41,7 @@ from scipy.ndimage import gaussian_filter1d
 # ============================================================
 
 DATA_DIR   = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\ica_cleaned"
-OUTPUT_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\figures\grand_average"
+OUTPUT_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\figures\erp"
 
 PARTICIPANTS = [
     ("301", 1), ("301", 2), ("301", 3),

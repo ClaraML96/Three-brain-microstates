@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 # ------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------
-DATA_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\preprocessed"
+DATA_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\ica_cleaned"
 
 participants = [
     ("301", 1), ("301", 2), ("301", 3),
@@ -16,6 +16,19 @@ participants = [
 ]
 
 channels_of_interest = ["C3", "O1", "O2", "Oz"]
+
+condition_labels = {
+    "Condition_0": "Solo — No Feedback",
+    "Condition_1": "Solo — With Feedback",
+    "Condition_2": "Duo P1+P2 — No Feedback",
+    "Condition_3": "Duo P1+P2 — With Feedback",
+    "Condition_4": "Duo P1+P3 — No Feedback",
+    "Condition_5": "Duo P1+P3 — With Feedback",
+    "Condition_6": "Duo P2+P3 — No Feedback",
+    "Condition_7": "Duo P2+P3 — With Feedback",
+    "Condition_8": "Trio — No Feedback",
+    "Condition_9": "Trio — With Feedback",
+}
 
 # Morlet parameters
 foi = np.linspace(1, 30, 30, dtype=int)
@@ -33,7 +46,7 @@ group_tfr = {}
 for pid, part in participants:
     print(f"\nProcessing participant {pid}, part {part}")
 
-    epoch_file = os.path.join(DATA_DIR, f"{pid}_p{part}_clean-epo.fif")
+    epoch_file = os.path.join(DATA_DIR, f"{pid}_p{part}_ica_cleaned-epo.fif")
     epochs = mne.read_epochs(epoch_file, preload=True)
 
     # Pick only channels of interest 
@@ -65,6 +78,28 @@ for pid, part in participants:
         if condition not in group_tfr:
             group_tfr[condition] = []
         group_tfr[condition].append(tfr_avg)
+
+# ------------------------------------------------------------
+# DIAGNOSTIC: find which participant drives the beta burst
+# ------------------------------------------------------------
+channel = "C3"
+fmin, fmax = 13, 30  # beta band
+
+if "Condition_5" in group_tfr and group_tfr["Condition_5"]:
+    ch_idx_check = group_tfr["Condition_5"][0].ch_names.index(channel)
+
+    print("\nBeta power max per subject per condition (C3):")
+    for condition in ["Condition_3", "Condition_5", "Condition_7"]:  # No feedback duo conditions
+        if condition not in group_tfr:
+            continue
+        print(f"\n  {condition_labels[condition]}:")
+        for i, tfr in enumerate(group_tfr[condition]):
+            f_mask = (tfr.freqs >= fmin) & (tfr.freqs <= fmax)
+            beta_data = tfr.data[ch_idx_check, f_mask, :]
+            max_val = beta_data.max()
+            print(f"    Subject {i} ({participants[i]}): max beta = {max_val:.1f}%")
+else:
+    print("\nSkipping beta diagnostic: Condition_5 is missing from group_tfr.")
 
 # ------------------------------------------------------------
 # AVERAGE ACROSS SUBJECTS
