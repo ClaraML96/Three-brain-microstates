@@ -379,8 +379,8 @@ def extract_bdf_to_fif(file_path, participant, exp_start_time, exp_end_time, out
 
 # Configuration
 DATA_PATH = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\FG_Data_For_Students\RawEEGData_1-4"
-FILE_NAME = '304.bdf'
-PARTICIPANT = 3
+FILE_NAME = '303.bdf'
+PARTICIPANT = 2
 
 # Processing parameters
 FILTER_LOW = 1.0    # Hz highpass filter — removes slow drifts
@@ -393,7 +393,7 @@ EPOCH_TMAX = 5.5    # seconds
 BAD_CHANNELS_LOOKUP = {
     (301, 1): [], (301, 2): [], (301, 3): [],
     (302, 1): [], (302, 2): ['AF8'], (302, 3): [],
-    (303, 1): [], (303, 2): [], (303, 3): [],
+    (303, 1): [], (303, 2): ['FT7'], (303, 3): [],
     (304, 1): ['AF3'], (304, 2): [], (304, 3): ['FT7'],
 }
 
@@ -415,14 +415,15 @@ BAD_EPOCHS_LOOKUP = {
     # (303, 1): [10, 260, 295],
     (303, 1): [10, 260, 295],
     # (303, 2): [96, 126, 160, 225, 227, 228, 230, 231, 235, 250, 266, 267, 268, 275, 278, 285, 290],
-    (303, 2): [96, 126, 225, 228, 235, 250, 268, 275, 278, 285, 290],
+    # (303, 2): [96, 126, 225, 228, 235, 250, 268, 275, 278, 285, 290],
+    (303, 2): [86, 96, 126, 159, 160, 209, 218, 225, 227, 228, 250, 266, 267, 268, 275, 278, 285, 289, 290],
     # (303, 3): [9, 10, 112, 257, 271, 272, 291, 294, 295, 296],
     (303, 3): [],
 
     # (304, 1): [31, 52, 53, 54, 56, 60, 65, 75, 90, 94, 121, 155, 156, 159, 217, 219, 268, 270, 283],
     (304,1): [52, 53, 54, 65, 75, 155, 156, 159, 200, 217, 268, 283],
     # (304, 2): [41, 46, 50, 51, 75, 100, 126, 175, 288],
-    (390,2): [41, 46, 51, 75, 288],
+    (304, 2): [41, 46, 51, 75, 288],
     # (304, 3): [98, 235, 285],
     (304, 3): [],
 }
@@ -433,17 +434,10 @@ trial_id = int(FILE_NAME.replace('.bdf', ''))
 # Step 1: Load data
 # -------
 file_path = f"{DATA_PATH}\\{FILE_NAME}"
-print(f"\n{'='*70}")
-print(f"STEP 1/7: LOAD DATA")
-print(f"File: {FILE_NAME} | Participant {PARTICIPANT}")
-print(f"{'='*70}")
 
 # Find crop boundaries from BDF directly (no RAM spike)
 exp_start_time, last_trial_time, native_sfreq = find_exp_start_from_bdf(file_path)
 exp_end_time = last_trial_time + EPOCH_TMAX + 1.0
-
-print(f"  Cropping to: {exp_start_time:.2f}s → {exp_end_time:.2f}s  "
-      f"({exp_end_time - exp_start_time:.0f}s total)")
 
 # Extract only needed channels to a temp FIF (bypasses BDF full-width buffer)
 import tempfile
@@ -459,7 +453,6 @@ extract_bdf_to_fif(
 
 # Load the small FIF — no memory issues
 raw_p = mne.io.read_raw_fif(temp_fif, preload=False, verbose=False)
-print(f"  ✓ Loaded from FIF: {len(raw_p.ch_names)} channels")
 participant_channels = [
     ch for ch in raw_p.ch_names if ch.startswith(f'{PARTICIPANT}-')
 ]
@@ -467,23 +460,12 @@ participant_channels = [
 # -------
 # Step 2: Filter and resample
 # -------
-print(f"\n{'='*70}")
-print("STEP 2/7: FILTER AND RESAMPLE")
-print(f"{'='*70}")
-
 raw_p.load_data()
-print(f"  Loaded: {len(raw_p.ch_names)} channels at {raw_p.info['sfreq']:.0f} Hz")
-
-print(f"  Filtering: {FILTER_LOW}–{FILTER_HIGH} Hz (Hamming)")
 raw_p.filter(l_freq=FILTER_LOW, h_freq=FILTER_HIGH, fir_design='firwin', verbose=False)
 
 # -------
 # Step 3: Bad channel interpolation
 # -------
-print(f"\n{'='*70}")
-print("STEP 3/7: BAD CHANNEL INTERPOLATION")
-print(f"{'='*70}")
-
 # Rename channels to remove participant prefix
 channel_mapping = {ch: ch.replace(f'{PARTICIPANT}-', '') for ch in participant_channels}
 raw_p.rename_channels(channel_mapping)
@@ -493,14 +475,10 @@ raw_p.rename_channels(channel_mapping)
 bad_channels = BAD_CHANNELS_LOOKUP.get((trial_id, PARTICIPANT), [])
 raw_p.info['bads'] = bad_channels
 
-print(f"Predefined Bad Channels:")
-print(f"  Trial ID: {trial_id}, Participant: {PARTICIPANT}")
-print(f"  Bad channels: {len(bad_channels)}")
 if bad_channels:
     print(f"  Channels: {', '.join(bad_channels)}")
 
 # Set standard 10-20 montage (required for spherical spline interpolation)
-print(f"  Setting standard 10-20 montage...")
 montage = mne.channels.make_standard_montage("standard_1020")
 raw_p.set_montage(montage)
 
@@ -514,20 +492,11 @@ else:
 # -------
 # Step 4: Apply common average reference
 # -------
-print(f"\n{'='*70}")
-print("STEP 4/7: APPLY COMMON AVERAGE REFERENCE")
-print(f"{'='*70}")
 raw_p.set_eeg_reference("average", projection=False, verbose=False)
-print("✓ Common average reference applied")
-print("  Note: applied after bad channel interpolation, before epoching")
-print("  This reference will carry through to ICA — do not re-apply there")
 
 # -------
 # Step 5: Extract and validate trial events
 # -------
-print(f"\n{'='*70}")
-print("STEP 5/7: EXTRACT AND VALIDATE TRIAL EVENTS")
-print(f"{'='*70}")
 events = mne.find_events(raw_p, stim_channel='Status', shortest_event=1, verbose=False)
 
 collapsed_events, event_id = extract_real_trial_events(
@@ -540,10 +509,6 @@ collapsed_events, event_id = extract_real_trial_events(
 # -------
 # Step 6: Create epochs
 # -------
-print(f"\n{'='*70}")
-print("STEP 6/7: CREATE EPOCHS")
-print(f"{'='*70}")
-
 epochs = mne.Epochs(
     raw_p,
     collapsed_events,
@@ -555,24 +520,12 @@ epochs = mne.Epochs(
     verbose=False
 )
 
-print(f"✓ Epochs created: {len(epochs)}")
-print(f"  Time window: {EPOCH_TMIN} to {EPOCH_TMAX} s")
-print(f"  Baseline: None (will be applied later if needed)")
-print(f"{'='*70}")
-
 # -------
 # Step 7: Drop bad epochs
 # -------
-print(f"\n{'='*70}")
-print("STEP 7/7: DROP BAD EPOCHS")
-print(f"{'='*70}")
-
 initial_count = len(epochs)
 bad_epoch_indices_1based = BAD_EPOCHS_LOOKUP.get((trial_id, PARTICIPANT), [])
 bad_epoch_indices_0based = [idx - 1 for idx in bad_epoch_indices_1based]
-
-print(f"Trial ID: {trial_id}, Participant: {PARTICIPANT}")
-print(f"Predefined bad epochs (1-based): {bad_epoch_indices_1based}")
 
 if bad_epoch_indices_0based:
     epochs.drop(bad_epoch_indices_0based, reason='PREDEFINED_BAD', verbose=False)
@@ -584,52 +537,37 @@ else:
     print(f"\nNo predefined bad epochs to drop")
     print(f"Epochs remaining: {initial_count}")
 
-print(f"{'='*70}")
-
 # -------
 # Save cleaned epochs for ICA
 # -------
-print(f"\n{'='*70}")
-print("SAVING CLEANED EPOCHS")
-print(f"{'='*70}")
-
-print(f"Current working directory: {os.getcwd()}")
-
 SAVE_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\preprocessed"
-print(f"Target save directory: {SAVE_DIR}")
 
 try:
     os.makedirs(SAVE_DIR, exist_ok=True)
-    print(f"✓ Directory created/verified")
+    print(f"Directory created/verified")
 except Exception as e:
-    print(f"⚠ Error creating directory: {e}")
+    print(f"Error creating directory: {e}")
     raise
 
 if os.path.isdir(SAVE_DIR):
-    print(f"✓ Directory exists and is accessible")
+    print(f"Directory exists and is accessible")
 else:
     raise FileNotFoundError(f"Failed to create directory: {SAVE_DIR}")
 
 EPOCHS_FILE = os.path.join(SAVE_DIR, f"{trial_id}_p{PARTICIPANT}_clean-epo.fif")
-print(f"Output file path: {EPOCHS_FILE}")
 
 try:
-    print(f"Saving epochs...")
     epochs.save(EPOCHS_FILE, overwrite=True, verbose=True)
-    print(f"✓ epochs.save() completed without errors")
 except Exception as e:
-    print(f"⚠ Error during save: {e}")
+    print(f"Error during save: {e}")
     raise
 
 if os.path.exists(EPOCHS_FILE):
     file_size_mb = os.path.getsize(EPOCHS_FILE) / (1024 * 1024)
-    print(f"✓ File created successfully")
-    print(f"  File size: {file_size_mb:.2f} MB")
-    print(f"  Location: {EPOCHS_FILE}")
+    print(f"File created successfully")
 else:
     raise FileNotFoundError(f"File was not created: {EPOCHS_FILE}")
 
-print(f"\nFiles in {SAVE_DIR}:")
 try:
     files = os.listdir(SAVE_DIR)
     if files:
@@ -642,7 +580,25 @@ try:
 except Exception as e:
     print(f"  Could not list directory: {e}")
 
-print(f"{'='*70}")
+# -------
+# Confirm preprocessing steps
+# -------
+
+import time
+
+print("\nVerifying saved file:")
+if os.path.exists(EPOCHS_FILE):
+    mod_time = os.path.getmtime(EPOCHS_FILE)
+    readable = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(mod_time))
+    file_size_mb = os.path.getsize(EPOCHS_FILE) / (1024 * 1024)
+    print(f"  File: {EPOCHS_FILE}")
+    print(f"  Last modified: {readable}")
+    print(f"  Size: {file_size_mb:.2f} MB")
+    print(f"  Epochs saved: {len(epochs)}")
+    print(f"  Bad epochs removed: {initial_count - len(epochs)}")
+else:
+    print("  ERROR: File was not saved!")
+
 
 # -------
 # Summary

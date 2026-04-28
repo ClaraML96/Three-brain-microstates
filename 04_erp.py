@@ -1,33 +1,3 @@
-"""
-ERP Analysis Pipeline — EEG Feedback × Group Conditions
-========================================================
-Two-level averaging structure:
-  Level 1 — per participant: average across trials → one ERP waveform per
-             participant per condition
-  Level 2 — grand average:  average those waveforms across participants →
-             one group-level ERP per condition, with SE / 95% CI across
-             participants (not trials)
-
-Conditions compared:
-  - with_feedback/solo    (T1P)
-  - with_feedback/trio    (T3P)
-  - without_feedback/solo (T1Pn)
-  - without_feedback/trio (T3Pn)
-
-Channels of interest:
-  - Occipital: O1, O2, Oz  (averaged into one signal)
-  - Motor:     C3           (single channel)
-
-Output per run
---------------
-  figures/ grand_average/
-      grand_avg_occipital_solo_vs_trio.png
-      grand_avg_motor_solo_vs_trio.png
-      grand_avg_occipital_feedback.png
-      grand_avg_motor_feedback.png
-      grand_avg_combined.png       <- 2x2: rows = channel, cols = feedback
-"""
-
 import os
 import numpy as np
 import matplotlib
