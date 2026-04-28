@@ -12,42 +12,6 @@ import matplotlib.pyplot as plt
 # ============================================================================
 
 def extract_real_trial_events(events, sfreq, epoch_tmin, epoch_tmax):
-    """
-    Extract and collapse real trial events from raw event array.
-
-    This function performs robust filtering to isolate experimental trials:
-    1. Excludes all events before ExpStart trigger (112)
-    2. Excludes practice trials (triggers 1-11)
-    3. Keeps only real experimental trials (triggers 10-59)
-    4. Collapses force levels by extracting second digit (e.g., 23 → 3)
-    5. Validates exactly 300 trials found (10 conditions × 30 force levels)
-    6. Checks for duplicates and balance
-
-    Parameters
-    ----------
-    events : np.ndarray
-        MNE events array (n_events × 3)
-    sfreq : float
-        Sampling frequency in Hz
-
-    Returns
-    -------
-    collapsed_events : np.ndarray
-        Filtered and collapsed event array
-    event_id : dict
-        Mapping from condition names to event codes
-
-    Raises
-    ------
-    RuntimeError
-        If ExpStart trigger not found or wrong number of trials detected
-    """
-    print("\n" + "="*70)
-    print("EVENT FILTERING AND VALIDATION")
-    print("="*70)
-
-    print(f"Total events found: {len(events)}")
-
     # -----------------------------------------------------------------------
     # Step 1: Find ExpStart trigger and filter events after experiment begins
     # -----------------------------------------------------------------------
@@ -62,8 +26,8 @@ def extract_real_trial_events(events, sfreq, epoch_tmin, epoch_tmax):
     exp_start_sample = exp_start_samples[0]
     events_after_exp = events[events[:, 0] > exp_start_sample]
 
-    print(f"✓ ExpStart found at sample {exp_start_sample}")
-    print(f"  Events after ExpStart: {len(events_after_exp)}")
+    print(f"ExpStart found at sample {exp_start_sample}")
+    print(f" Events after ExpStart: {len(events_after_exp)}")
 
     # -----------------------------------------------------------------------
     # Step 2: Explicitly exclude practice trials (codes 1-11)
@@ -74,8 +38,8 @@ def extract_real_trial_events(events, sfreq, epoch_tmin, epoch_tmax):
     ]
 
     if len(practice_trials) > 0:
-        print(f"  Practice trials detected: {len(practice_trials)} (codes 1-11)")
-        print(f"  → Excluding practice trials")
+        print(f" Practice trials detected: {len(practice_trials)} (codes 1-11)")
+        print(f" Excluding practice trials")
 
     # -----------------------------------------------------------------------
     # Step 3: Keep only real experimental trials (codes 10-59)
@@ -85,7 +49,7 @@ def extract_real_trial_events(events, sfreq, epoch_tmin, epoch_tmax):
         (events_after_exp[:, 2] <= 59)
     ]
 
-    print(f"✓ Real trial triggers found: {len(real_trials)}")
+    print(f"Real trial triggers found: {len(real_trials)}")
 
     # -----------------------------------------------------------------------
     # Step 4: Validate exactly 300 trials (CRITICAL ASSERTION)
@@ -98,7 +62,7 @@ def extract_real_trial_events(events, sfreq, epoch_tmin, epoch_tmax):
             f"Data integrity compromised - check raw data and trigger codes."
         )
 
-    print(f"✓ Trial count validated: {len(real_trials)} trials (expected: {expected_trials})")
+    print(f"Trial count validated: {len(real_trials)} trials (expected: {expected_trials})")
 
     # -----------------------------------------------------------------------
     # Step 5: Collapse force levels (extract second digit only)
@@ -111,7 +75,7 @@ def extract_real_trial_events(events, sfreq, epoch_tmin, epoch_tmax):
         collapsed_events[i, 2] = condition_code
 
     unique_conditions = np.unique(collapsed_events[:, 2])
-    print(f"✓ Collapsed to {len(unique_conditions)} conditions: {sorted(unique_conditions)}")
+    print(f"Collapsed to {len(unique_conditions)} conditions: {sorted(unique_conditions)}")
 
     # -----------------------------------------------------------------------
     # Step 6: Check for duplicate sample indices (data integrity)
@@ -126,7 +90,7 @@ def extract_real_trial_events(events, sfreq, epoch_tmin, epoch_tmax):
             f"This indicates corrupted trigger data."
         )
 
-    print(f"✓ No duplicate sample indices detected")
+    print(f"No duplicate sample indices detected")
 
     # -----------------------------------------------------------------------
     # Step 7: Validate condition balance (30 epochs per condition)
@@ -148,11 +112,11 @@ def extract_real_trial_events(events, sfreq, epoch_tmin, epoch_tmax):
             all_balanced = False
 
     if not all_balanced:
-        print(f"\n⚠ WARNING: Condition imbalance detected!")
+        print(f"\nWARNING: Condition imbalance detected!")
         print(f"  Not all conditions have exactly {expected_per_condition} epochs.")
         print(f"  This may affect statistical analysis.")
     else:
-        print(f"\n✓ All conditions balanced ({expected_per_condition} epochs each)")
+        print(f"\nAll conditions balanced ({expected_per_condition} epochs each)")
 
     # -----------------------------------------------------------------------
     # Step 8: Calculate minimum inter-event interval
@@ -167,10 +131,10 @@ def extract_real_trial_events(events, sfreq, epoch_tmin, epoch_tmax):
     print(f"  Epoch duration: {epoch_tmax - epoch_tmin:.1f} s")
 
     if min_iei_seconds < (epoch_tmax - epoch_tmin):
-        print(f"  ⚠ WARNING: Minimum IEI < epoch duration")
-        print(f"    Epoch overlap is mathematically expected")
+        print(f"  WARNING: Minimum IEI < epoch duration")
+        print(f"   Epoch overlap is mathematically expected")
     else:
-        print(f"  ✓ No epoch overlap expected")
+        print(f"  No epoch overlap expected")
 
     # -----------------------------------------------------------------------
     # Step 9: Create event_id dictionary
@@ -178,17 +142,12 @@ def extract_real_trial_events(events, sfreq, epoch_tmin, epoch_tmax):
     event_id = {f"Condition_{int(cond)}": int(cond)
                 for cond in unique_conditions}
 
-    print(f"\n✓ Event filtering complete: {len(collapsed_events)} valid trials")
-    print("="*70)
+    print(f"\nEvent filtering complete: {len(collapsed_events)} valid trials")
 
     return collapsed_events, event_id
 
 def find_exp_start_from_bdf(file_path):
-    """
-    Read only the Status channel from a BDF file to find:
-    - ExpStart trigger (112) → crop start
-    - Last real trial trigger (10-59) → crop end
-    """
+    
     with open(file_path, 'rb') as f:
         header_bytes = f.read(256)
         n_channels = int(header_bytes[252:256].decode('ascii').strip())
@@ -255,15 +214,10 @@ def find_exp_start_from_bdf(file_path):
 
     exp_start_time = exp_start_sample / sfreq
     exp_end_time = (last_trial_sample / sfreq) if last_trial_sample else None
-    print(f"✓ Last real trial at sample {last_trial_sample} ({exp_end_time:.2f}s)")
+    print(f"Last real trial at sample {last_trial_sample} ({exp_end_time:.2f}s)")
     return exp_start_time, exp_end_time, sfreq
 
 def extract_bdf_to_fif(file_path, participant, exp_start_time, exp_end_time, output_path, target_sfreq=512):
-    """
-    Read only participant + Status channels from BDF, decimate to target_sfreq
-    on the fly (record by record), and save as FIF — minimal RAM usage.
-    """
-    print(f"  Extracting channels directly from BDF (chunked, low-memory)...")
 
     with open(file_path, 'rb') as f:
         header_bytes = f.read(256)
@@ -285,14 +239,14 @@ def extract_bdf_to_fif(file_path, participant, exp_start_time, exp_end_time, out
         # Decimation factor (e.g. 2048 → 512 = factor 4)
         decimate_factor = int(round(sfreq / target_sfreq))
         actual_sfreq = sfreq / decimate_factor
-        print(f"  Native sfreq: {sfreq:.0f} Hz → decimating by {decimate_factor}x → {actual_sfreq:.0f} Hz")
+        print(f" Native sfreq: {sfreq:.0f} Hz → decimating by {decimate_factor}x → {actual_sfreq:.0f} Hz")
 
         prefix = f'{participant}-'
         keep_idx = [i for i, l in enumerate(labels)
                     if l.startswith(prefix) or 'Status' in l]
         keep_labels = [labels[i].replace(prefix, '') for i in keep_idx]
         n_keep = len(keep_idx)
-        print(f"  Keeping {n_keep} channels: {n_keep-1} EEG + 1 Status")
+        print(f" Keeping {n_keep} channels: {n_keep-1} EEG + 1 Status")
 
         bytes_per_sample = 3
         record_size = sum(s * bytes_per_sample for s in samples_per_record)
@@ -358,7 +312,7 @@ def extract_bdf_to_fif(file_path, participant, exp_start_time, exp_end_time, out
                     out_data[out_i, sample_out:sample_out + spr_decimated] = scaled[::decimate_factor]
 
             if rec_i % 500 == 0:
-                print(f"    Record {rec_i}/{total_records} ({100*rec_i/total_records:.0f}%)")
+                print(f" Record {rec_i}/{total_records} ({100*rec_i/total_records:.0f}%)")
 
     print("Data range check:")
     print("Min:", np.min(out_data))
@@ -368,9 +322,8 @@ def extract_bdf_to_fif(file_path, participant, exp_start_time, exp_end_time, out
     info = mne.create_info(ch_names=keep_labels, sfreq=actual_sfreq, ch_types=ch_types)
     raw_out = mne.io.RawArray(out_data, info, verbose=False)
 
-    print(f"  Saving to FIF...")
     raw_out.save(output_path, overwrite=True, verbose=False)
-    print(f"  ✓ Saved: {output_path}")
+    print(f"Saved: {output_path}")
     return output_path
 
 # ============================================================================
@@ -379,8 +332,8 @@ def extract_bdf_to_fif(file_path, participant, exp_start_time, exp_end_time, out
 
 # Configuration
 DATA_PATH = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\FG_Data_For_Students\RawEEGData_1-4"
-FILE_NAME = '303.bdf'
-PARTICIPANT = 2
+FILE_NAME = '301.bdf'
+PARTICIPANT = 3
 
 # Processing parameters
 FILTER_LOW = 1.0    # Hz highpass filter — removes slow drifts

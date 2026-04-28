@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 # ------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------
-DATA_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\preprocessed"
+DATA_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\ica_cleaned"
 
 output_dir = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\figures\erd"
 os.makedirs(output_dir, exist_ok=True)
@@ -21,21 +21,43 @@ participants = [
 channels_of_interest = ["C3", "O1", "O2", "Oz"]
 
 freq_bands = {
-    "theta": (4,  7),
     "alpha": (8, 12),
     "beta":  (13, 30),
 }
 
-band_colors = {
-    "theta": "steelblue",
-    "alpha": "darkorange",
-    "beta":  "seagreen",
+condition_labels = {
+    "Condition_0": "Solo — With Feedback",    
+    "Condition_1": "Solo — No Feedback",       
+    "Condition_2": "Duo P1+P2 — With Feedback",
+    "Condition_3": "Duo P1+P2 — No Feedback",
+    "Condition_4": "Duo P1+P3 — With Feedback",
+    "Condition_5": "Duo P1+P3 — No Feedback",
+    "Condition_6": "Duo P2+P3 — With Feedback",
+    "Condition_7": "Duo P2+P3 — No Feedback",
+    "Condition_8": "Trio — With Feedback",
+    "Condition_9": "Trio — No Feedback",
+}
+
+condition_colors = {
+    "Condition_0": "firebrick",      
+    "Condition_1": "steelblue",      
+    "Condition_2": "darkorange",     
+    "Condition_3": "cornflowerblue", 
+    "Condition_4": "sandybrown",
+    "Condition_5": "royalblue",
+    "Condition_6": "peru",
+    "Condition_7": "dodgerblue",
+    "Condition_8": "darkred",        
+    "Condition_9": "seagreen",       
 }
 
 # Morlet parameters
 foi = np.linspace(1, 30, 30, dtype=int)
 n_cycles = 3 + 0.5 * foi
 baseline_window = (-0.25, 0)
+
+# Time window to plot (matching paper)
+plot_tmin, plot_tmax = 0.0, 4.0
 
 # ------------------------------------------------------------
 # STORAGE
@@ -48,7 +70,7 @@ group_tfr = {}
 for pid, part in participants:
     print(f"\nProcessing participant {pid}, part {part}")
 
-    epoch_file = os.path.join(DATA_DIR, f"{pid}_p{part}_clean-epo.fif")
+    epoch_file = os.path.join(DATA_DIR, f"{pid}_p{part}_ica_cleaned-epo.fif")
     epochs = mne.read_epochs(epoch_file, preload=True)
     epochs.pick(channels_of_interest)
 
@@ -73,54 +95,70 @@ for pid, part in participants:
         group_tfr[condition].append(tfr_avg)
 
 # ------------------------------------------------------------
-# GRAND AVERAGE ACROSS SUBJECTS
-# ------------------------------------------------------------
-group_avg = {}
-for condition, tfr_list in group_tfr.items():
-    group_avg[condition] = mne.grand_average(tfr_list)
-    print(f"Grand average computed for condition: {condition}")
-
-# ------------------------------------------------------------
-# BAND-AVERAGED ERD TIME COURSE 
+# HELPERS
 # ------------------------------------------------------------
 def band_erd(tfr, channel, fmin, fmax):
-    """Returns ERD% time course averaged across [fmin, fmax] Hz for one channel."""
     ch_idx = tfr.ch_names.index(channel)
     f_mask = (tfr.freqs >= fmin) & (tfr.freqs <= fmax)
     return tfr.data[ch_idx, f_mask, :].mean(axis=0)
 
-# ------------------------------------------------------------
-# PLOT: one figure per condition, 2x2 subplots (one per channel)
-#        each subplot shows one line per frequency band
-# ------------------------------------------------------------
-times = group_avg[list(group_avg.keys())[0]].times
+def group_mean_sem(tfr_list, channel, fmin, fmax):
+    subject_erds = np.array([band_erd(tfr, channel, fmin, fmax) for tfr in tfr_list])
+    mean = subject_erds.mean(axis=0)
+    sem = subject_erds.std(axis=0) / np.sqrt(len(subject_erds))
+    return mean, sem
 
-for condition, tfr in group_avg.items():
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10), sharey=True)
-    axes = axes.flatten()
+# ------------------------------------------------------------
+# Get time axis and mask to 0–4s for plotting
+# ------------------------------------------------------------
+first_condition = list(group_tfr.keys())[0]
+times = group_tfr[first_condition][0].times
+time_mask = (times >= plot_tmin) & (times <= plot_tmax)
+times_plot = times[time_mask]
 
-    for ax, channel in zip(axes, channels_of_interest):
-        for band_name, (fmin, fmax) in freq_bands.items():
-            erd = band_erd(tfr, channel, fmin, fmax)
-            ax.plot(
-                times, erd,
-                lw=1.8,
-                color=band_colors[band_name],
-                label=f"{band_name} ({fmin}–{fmax} Hz)"
-            )
+conditions = list(group_tfr.keys())
+
+# ------------------------------------------------------------
+# PLOT: one figure per channel
+#        one subplot per frequency band (alpha, beta)
+#        one line per condition with shaded SEM
+# ------------------------------------------------------------
+for channel in channels_of_interest:
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
+
+    for ax, (band_name, (fmin, fmax)) in zip(axes, freq_bands.items()):
+        for condition in conditions:
+            if condition not in condition_labels:
+                continue
+
+            color = condition_colors.get(condition, "gray")
+            label = condition_labels[condition]
+            mean, sem = group_mean_sem(group_tfr[condition], channel, fmin, fmax)
+
+            # Crop to 0–4s for plotting only
+            mean_plot = mean[time_mask]
+            sem_plot = sem[time_mask]
+
+            ax.plot(times_plot, mean_plot, lw=1.8, color=color, label=label)
+            ax.fill_between(times_plot, mean_plot - sem_plot, mean_plot + sem_plot,
+                            alpha=0.2, color=color)
 
         ax.axhline(0, color="k", lw=0.8, ls="--")
-        ax.axvspan(baseline_window[0], baseline_window[1], color="gray", alpha=0.15)
-        ax.axvline(0, color="gray", lw=0.8, ls=":")  # stimulus onset
-        ax.set_title(channel)
+        ax.axvline(0, color="gray", lw=0.8, ls=":")
+        ax.set_xlim(plot_tmin, plot_tmax)
+        ax.set_title(band_name.capitalize(), fontsize=12, fontweight="bold")
         ax.set_xlabel("Time (s)")
-        ax.set_ylabel("ERD/ERS (%)")
-        ax.legend(fontsize=8, loc="upper left")
+        if ax == axes[0]:
+            ax.set_ylabel("Power (%)")
 
-    fig.suptitle(f"ERD/ERS — {condition}", fontsize=14, fontweight="bold")
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper right", fontsize=8, framealpha=0.8,
+               bbox_to_anchor=(1.18, 1.0))
+
+    fig.suptitle(f"ERD/ERS — {channel}", fontsize=14, fontweight="bold")
     plt.tight_layout()
 
-    output_file = os.path.join(output_dir, f"erd_{condition}.png")
+    output_file = os.path.join(output_dir, f"erd_alphabeta_{channel}.png")
     fig.savefig(output_file, dpi=300, bbox_inches="tight")
     print(f"Saved: {output_file}")
     plt.close(fig)
