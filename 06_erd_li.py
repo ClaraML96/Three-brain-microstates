@@ -164,10 +164,10 @@ for channel in channels_of_interest:
     fig.legend(handles, labels, loc="upper right", fontsize=8, framealpha=0.8,
                bbox_to_anchor=(1.18, 1.0))
 
-    fig.suptitle(f"ERD/ERS_li — {channel}", fontsize=14, fontweight="bold")
+    fig.suptitle(f"ERD/ERS_Li — {channel}", fontsize=14, fontweight="bold")
     plt.tight_layout()
 
-    output_file = os.path.join(output_dir, f"erd_alphabeta_li_{channel}.png")
+    output_file = os.path.join(output_dir, f"erd_alphabeta_Li_{channel}.png")
     fig.savefig(output_file, dpi=300, bbox_inches="tight")
     print(f"Saved: {output_file}")
     plt.close(fig)

@@ -26,8 +26,8 @@ freq_bands = {
 }
 
 condition_labels = {
-    "Condition_0": "Solo — With Feedback",    # was No Feedback
-    "Condition_1": "Solo — No Feedback",       # was With Feedback
+    "Condition_0": "Solo — With Feedback",    
+    "Condition_1": "Solo — No Feedback",       
     "Condition_2": "Duo P1+P2 — With Feedback",
     "Condition_3": "Duo P1+P2 — No Feedback",
     "Condition_4": "Duo P1+P3 — With Feedback",
@@ -39,16 +39,16 @@ condition_labels = {
 }
 
 condition_colors = {
-    "Condition_0": "firebrick",      # Solo With Feedback → warm
-    "Condition_1": "steelblue",      # Solo No Feedback → cool
-    "Condition_2": "darkorange",     # Duo With Feedback → warm
-    "Condition_3": "cornflowerblue", # Duo No Feedback → cool
+    "Condition_0": "firebrick",      
+    "Condition_1": "steelblue",      
+    "Condition_2": "darkorange",     
+    "Condition_3": "cornflowerblue", 
     "Condition_4": "sandybrown",
     "Condition_5": "royalblue",
     "Condition_6": "peru",
     "Condition_7": "dodgerblue",
-    "Condition_8": "darkred",        # Trio With Feedback → warm
-    "Condition_9": "seagreen",       # Trio No Feedback → cool
+    "Condition_8": "darkred",        
+    "Condition_9": "seagreen",       
 }
 
 # Morlet parameters
