@@ -34,12 +34,8 @@ else:
     print(epochs.get_data().shape)
     print(np.min(epochs.get_data()), np.max(epochs.get_data())) 
 
-    print("\n" + "="*70)
-    print("EPOCH VISUALIZATION")
-    print("="*70)
     print(f"Number of epochs: {len(epochs)}")
     print(f"Channels: {len(epochs.ch_names)}")
-    print("Instructions: Mark bad epochs by clicking them. Close window to finish.")
     print("="*70)
 
     epochs.plot(

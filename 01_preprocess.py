@@ -324,7 +324,7 @@ def extract_bdf_to_fif(file_path, participant, exp_start_time, exp_end_time, out
 
 # Configuration
 DATA_PATH = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\FG_Data_For_Students\RawEEGData_1-4"
-FILE_NAME = '301.bdf'
+FILE_NAME = '304.bdf'
 PARTICIPANT = 3
 
 # Processing parameters
@@ -468,11 +468,9 @@ epochs = mne.Epochs(
 # Step 7: Drop bad epochs
 # -------
 initial_count = len(epochs)
-bad_epoch_indices_1based = BAD_EPOCHS_LOOKUP.get((triad_id, PARTICIPANT), [])
-bad_epoch_indices_0based = [idx - 1 for idx in bad_epoch_indices_1based]
-
-if bad_epoch_indices_0based:
-    epochs.drop(bad_epoch_indices_0based, reason='PREDEFINED_BAD', verbose=False)
+bad_epoch_indices = BAD_EPOCHS_LOOKUP.get((triad_id, PARTICIPANT), [])
+if bad_epoch_indices:
+    epochs.drop(bad_epoch_indices, reason='PREDEFINED_BAD', verbose=False)
     final_count = len(epochs)
     dropped = initial_count - final_count
     print(f"\nEpochs dropped: {dropped}")

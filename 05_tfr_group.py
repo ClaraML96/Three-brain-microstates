@@ -18,16 +18,16 @@ participants = [
 channels_of_interest = ["C3", "O1", "O2", "Oz"]
 
 condition_labels = {
-    "Condition_0": "Solo — No Feedback",
-    "Condition_1": "Solo — With Feedback",
-    "Condition_2": "Duo P1+P2 — No Feedback",
-    "Condition_3": "Duo P1+P2 — With Feedback",
-    "Condition_4": "Duo P1+P3 — No Feedback",
-    "Condition_5": "Duo P1+P3 — With Feedback",
-    "Condition_6": "Duo P2+P3 — No Feedback",
-    "Condition_7": "Duo P2+P3 — With Feedback",
-    "Condition_8": "Trio — No Feedback",
-    "Condition_9": "Trio — With Feedback",
+    "Condition_0": "Solo — With Feedback",
+    "Condition_1": "Solo — No Feedback",
+    "Condition_2": "Duo P1+P2 — With Feedback",
+    "Condition_3": "Duo P1+P2 — No Feedback",
+    "Condition_4": "Duo P1+P3 — With Feedback",
+    "Condition_5": "Duo P1+P3 — No Feedback",
+    "Condition_6": "Duo P2+P3 — With Feedback",
+    "Condition_7": "Duo P2+P3 — No Feedback",
+    "Condition_8": "Trio — With Feedback",
+    "Condition_9": "Trio — No Feedback",
 }
 
 # Morlet parameters
@@ -128,7 +128,8 @@ for condition, tfr in group_avg.items():
         )
         ax.set_title(channel) 
 
-    fig.suptitle(f"Group TFR — {condition}", fontsize=14)
+    label = condition_labels.get(condition, condition)
+    fig.suptitle(f"Group TFR — {label}", fontsize=14)
     plt.tight_layout()
 
     output_file = os.path.join(output_dir, f"tfr_group_{condition}.png")
