@@ -26,9 +26,6 @@ def extract_real_trial_events(events, sfreq, epoch_tmin, epoch_tmax):
     exp_start_sample = exp_start_samples[0]
     events_after_exp = events[events[:, 0] > exp_start_sample]
 
-    print(f"ExpStart found at sample {exp_start_sample}")
-    print(f" Events after ExpStart: {len(events_after_exp)}")
-
     # -----------------------------------------------------------------------
     # Step 2: Explicitly exclude practice trials (codes 1-11)
     # -----------------------------------------------------------------------
@@ -39,7 +36,6 @@ def extract_real_trial_events(events, sfreq, epoch_tmin, epoch_tmax):
 
     if len(practice_trials) > 0:
         print(f" Practice trials detected: {len(practice_trials)} (codes 1-11)")
-        print(f" Excluding practice trials")
 
     # -----------------------------------------------------------------------
     # Step 3: Keep only real experimental trials (codes 10-59)
@@ -49,7 +45,7 @@ def extract_real_trial_events(events, sfreq, epoch_tmin, epoch_tmax):
         (events_after_exp[:, 2] <= 59)
     ]
 
-    print(f"Real trial triggers found: {len(real_trials)}")
+    print(f"Trial triggers found: {len(real_trials)}")
 
     # -----------------------------------------------------------------------
     # Step 4: Validate exactly 300 trials (CRITICAL ASSERTION)
@@ -90,8 +86,6 @@ def extract_real_trial_events(events, sfreq, epoch_tmin, epoch_tmax):
             f"This indicates corrupted trigger data."
         )
 
-    print(f"No duplicate sample indices detected")
-
     # -----------------------------------------------------------------------
     # Step 7: Validate condition balance (30 epochs per condition)
     # -----------------------------------------------------------------------
@@ -102,7 +96,6 @@ def extract_real_trial_events(events, sfreq, epoch_tmin, epoch_tmax):
         count = np.sum(collapsed_events[:, 2] == cond)
         condition_counts[int(cond)] = count
 
-    print(f"\nCondition balance check:")
     all_balanced = True
     for cond in sorted(unique_conditions):
         count = condition_counts[int(cond)]
@@ -114,7 +107,6 @@ def extract_real_trial_events(events, sfreq, epoch_tmin, epoch_tmax):
     if not all_balanced:
         print(f"\nWARNING: Condition imbalance detected!")
         print(f"  Not all conditions have exactly {expected_per_condition} epochs.")
-        print(f"  This may affect statistical analysis.")
     else:
         print(f"\nAll conditions balanced ({expected_per_condition} epochs each)")
 
@@ -368,7 +360,6 @@ BAD_EPOCHS_LOOKUP = {
     # (303, 1): [10, 260, 295],
     (303, 1): [10, 260, 295],
     # (303, 2): [96, 126, 160, 225, 227, 228, 230, 231, 235, 250, 266, 267, 268, 275, 278, 285, 290],
-    # (303, 2): [96, 126, 225, 228, 235, 250, 268, 275, 278, 285, 290],
     (303, 2): [86, 96, 126, 159, 160, 209, 218, 225, 227, 228, 250, 266, 267, 268, 275, 278, 285, 289, 290],
     # (303, 3): [9, 10, 112, 257, 271, 272, 291, 294, 295, 296],
     (303, 3): [],
@@ -381,7 +372,7 @@ BAD_EPOCHS_LOOKUP = {
     (304, 3): [],
 }
 
-trial_id = int(FILE_NAME.replace('.bdf', ''))
+triad_id = int(FILE_NAME.replace('.bdf', ''))
 
 # -------
 # Step 1: Load data
@@ -394,7 +385,7 @@ exp_end_time = last_trial_time + EPOCH_TMAX + 1.0
 
 # Extract only needed channels to a temp FIF (bypasses BDF full-width buffer)
 import tempfile
-temp_fif = os.path.join(tempfile.gettempdir(), f"temp_{trial_id}_p{PARTICIPANT}_raw.fif")
+temp_fif = os.path.join(tempfile.gettempdir(), f"temp_{triad_id}_p{PARTICIPANT}_raw.fif")
 extract_bdf_to_fif(
     file_path,
     PARTICIPANT,
@@ -424,8 +415,8 @@ channel_mapping = {ch: ch.replace(f'{PARTICIPANT}-', '') for ch in participant_c
 raw_p.rename_channels(channel_mapping)
 
 # Look up predefined bad channels
-# trial_id = int(FILE_NAME.replace('.bdf', ''))
-bad_channels = BAD_CHANNELS_LOOKUP.get((trial_id, PARTICIPANT), [])
+# triad_id = int(FILE_NAME.replace('.bdf', ''))
+bad_channels = BAD_CHANNELS_LOOKUP.get((triad_id, PARTICIPANT), [])
 raw_p.info['bads'] = bad_channels
 
 if bad_channels:
@@ -477,7 +468,7 @@ epochs = mne.Epochs(
 # Step 7: Drop bad epochs
 # -------
 initial_count = len(epochs)
-bad_epoch_indices_1based = BAD_EPOCHS_LOOKUP.get((trial_id, PARTICIPANT), [])
+bad_epoch_indices_1based = BAD_EPOCHS_LOOKUP.get((triad_id, PARTICIPANT), [])
 bad_epoch_indices_0based = [idx - 1 for idx in bad_epoch_indices_1based]
 
 if bad_epoch_indices_0based:
@@ -507,7 +498,7 @@ if os.path.isdir(SAVE_DIR):
 else:
     raise FileNotFoundError(f"Failed to create directory: {SAVE_DIR}")
 
-EPOCHS_FILE = os.path.join(SAVE_DIR, f"{trial_id}_p{PARTICIPANT}_clean-epo.fif")
+EPOCHS_FILE = os.path.join(SAVE_DIR, f"{triad_id}_p{PARTICIPANT}_clean-epo.fif")
 
 try:
     epochs.save(EPOCHS_FILE, overwrite=True, verbose=True)
