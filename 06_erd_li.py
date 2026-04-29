@@ -130,7 +130,7 @@ conditions = list(group_tfr.keys())
 #        one line per condition with shaded SEM
 # ------------------------------------------------------------
 for channel in channels_of_interest:
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=False)
 
     for ax, (band_name, (fmin, fmax)) in zip(axes, freq_bands.items()):
         for condition in conditions:
