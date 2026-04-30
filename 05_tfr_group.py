@@ -33,6 +33,7 @@ condition_labels = {
 # Morlet parameters
 foi = np.linspace(1, 30, 30, dtype=int)
 n_cycles = 3 + 0.5 * foi
+# wavelet_length = (5/np.pi)*(n_cycles*sfreq)/foi-1 
 baseline_window = (-0.25, 0)
 
 # ------------------------------------------------------------
