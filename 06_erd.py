@@ -54,19 +54,18 @@ condition_colors = {
 # Morlet parameters
 foi = np.linspace(1, 30, 30, dtype=int)
 n_cycles = 3 + 0.5 * foi
-# wavelet_length = (5/np.pi)*(n_cycles*sfreq)/foi-1 
 baseline_window = (-0.25, 0)
 
 # Time window to plot (matching paper)
 plot_tmin, plot_tmax = 0.0, 4.0
 
 # ------------------------------------------------------------
-# STORAGE
+# Storage
 # ------------------------------------------------------------
 group_tfr = {}
 
 # ------------------------------------------------------------
-# LOOP OVER PARTICIPANTS
+# Looping over participants and conditions
 # ------------------------------------------------------------
 for pid, part in participants:
     print(f"\nProcessing participant {pid}, part {part}")
@@ -96,7 +95,7 @@ for pid, part in participants:
         group_tfr[condition].append(tfr_avg)
 
 # ------------------------------------------------------------
-# HELPERS
+# Averaging functions
 # ------------------------------------------------------------
 def band_erd(tfr, channel, fmin, fmax):
     ch_idx = tfr.ch_names.index(channel)
@@ -121,8 +120,8 @@ conditions = list(group_tfr.keys())
 
 # ------------------------------------------------------------
 # PLOT: one figure per channel
-#        one subplot per frequency band (alpha, beta)
-#        one line per condition with shaded SEM
+#       one subplot per frequency band (alpha, beta)
+#       one line per condition with shaded SEM
 # ------------------------------------------------------------
 for channel in channels_of_interest:
     fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=False)
