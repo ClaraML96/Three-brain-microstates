@@ -9,15 +9,11 @@ import matplotlib.pyplot as plt
 # CONFIGURATION
 # ------------------------------------------------------------
 DATA_DIR = (
-    r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet"
-    r"\Skrivebord\DTU\Human Centeret Artificial Intelligence"
-    r"\Thesis\data\ica_cleaned"
+    r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\ica_cleaned"
 )
 
 OUTPUT_DIR = (
-    r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet"
-    r"\Skrivebord\DTU\Human Centeret Artificial Intelligence"
-    r"\Thesis\figures\erd_joint"
+    r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\figures\erd_joint"
 )
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
