@@ -2,14 +2,15 @@ import os
 import numpy as np
 import mne
 import matplotlib.pyplot as plt
+from scipy.ndimage import gaussian_filter1d
+import glob
 
 # ------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------
-# Use two preprocessed epochs files.
-EPOCH_FILE_A = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\FG_Data_For_Students\PreprocessedEEGData\301A_FG_preprocessed-epo.fif"
-EPOCH_FILE_B = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\FG_Data_For_Students\PreprocessedEEGData\301B_FG_preprocessed-epo.fif"
-EPOCH_FILES = [EPOCH_FILE_A, EPOCH_FILE_B]
+DATA_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\FG_Data_For_Students\PreprocessedEEGData"
+EPOCH_FILES = sorted(glob.glob(os.path.join(DATA_DIR, "*_FG_preprocessed-epo.fif")))
+print(f"Found {len(EPOCH_FILES)} epoch files")
 
 output_dir = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\figures\erd"
 os.makedirs(output_dir, exist_ok=True)
@@ -80,6 +81,10 @@ for epoch_file in EPOCH_FILES:
 
     print(f"\nProcessing file: {os.path.basename(epoch_file)}")
     epochs = mne.read_epochs(epoch_file, preload=True)
+    
+    # for condition in epochs.event_id:
+    #     print(f"{condition}: {len(epochs[condition])} trials")
+
     epochs.pick(channels_of_interest)
 
     for condition in epochs.event_id:
@@ -121,6 +126,8 @@ def group_mean_sem(tfr_list, channel, fmin, fmax):
 # ------------------------------------------------------------
 # Get time axis and mask to 0–4s for plotting
 # ------------------------------------------------------------
+# smoothing_sigma = 10  # in samples, adjust to taste
+
 first_condition = list(group_tfr.keys())[0]
 times = group_tfr[first_condition][0].times
 time_mask = (times >= plot_tmin) & (times <= plot_tmax)
@@ -147,6 +154,9 @@ for channel in channels_of_interest:
             color = condition_colors.get(condition, "gray")
             label = condition_labels[condition]
             mean, sem = group_mean_sem(group_tfr[condition], channel, fmin, fmax)
+
+            # mean_plot = gaussian_filter1d(mean[time_mask], sigma=smoothing_sigma)
+            # sem_plot  = gaussian_filter1d(sem[time_mask],  sigma=smoothing_sigma)
 
             # Crop to 0–4s for plotting only
             mean_plot = mean[time_mask]
