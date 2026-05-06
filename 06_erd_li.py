@@ -30,30 +30,31 @@ freq_bands = {
     "beta":  (13, 30),
 }
 
+condition_remap = {
+    "T12P":  "Duo_With_Feedback",
+    "T13P":  "Duo_With_Feedback",
+    "T23P":  "Duo_With_Feedback",
+    "T12Pn": "Duo_No_Feedback",
+    "T13Pn": "Duo_No_Feedback",
+    "T23Pn": "Duo_No_Feedback",
+}
+
 condition_labels = {
-    "T1P":   "Solo — With Feedback",
-    "T1Pn":  "Solo — No Feedback",
-    "T3P":   "Trio — With Feedback",
-    "T3Pn":  "Trio — No Feedback",
-    "T12P":  "Duo P1+P2 — With Feedback",
-    "T12Pn": "Duo P1+P2 — No Feedback",
-    "T13P":  "Duo P1+P3 — With Feedback",
-    "T13Pn": "Duo P1+P3 — No Feedback",
-    "T23P":  "Duo P2+P3 — With Feedback",
-    "T23Pn": "Duo P2+P3 — No Feedback",
+    "T1P":             "Solo — With Feedback",
+    "T1Pn":            "Solo — No Feedback",
+    "T3P":             "Trio — With Feedback",
+    "T3Pn":            "Trio — No Feedback",
+    "Duo_With_Feedback": "Duo — With Feedback",
+    "Duo_No_Feedback":   "Duo — No Feedback",
 }
 
 condition_colors = {
-    "T1P":   "firebrick",
-    "T1Pn":  "steelblue",
-    "T3P":   "darkred",
-    "T3Pn":  "seagreen",
-    "T12P":  "darkorange",
-    "T12Pn": "cornflowerblue",
-    "T13P":  "sandybrown",
-    "T13Pn": "royalblue",
-    "T23P":  "peru",
-    "T23Pn": "dodgerblue",
+    "T1P":             "firebrick",
+    "T1Pn":            "steelblue",
+    "T3P":             "darkred",
+    "T3Pn":            "seagreen",
+    "Duo_With_Feedback": "darkorange",
+    "Duo_No_Feedback":   "cornflowerblue",
 }
 
 # Morlet parameters
@@ -97,9 +98,11 @@ for epoch_file in EPOCH_FILES:
         tfr_avg.apply_baseline(baseline_window, mode="percent")
         tfr_avg.data *= 100
 
-        if condition not in group_tfr:
-            group_tfr[condition] = []
-        group_tfr[condition].append(tfr_avg)
+        storage_key = condition_remap.get(condition, condition)
+
+        if storage_key not in group_tfr:
+            group_tfr[storage_key] = []
+        group_tfr[storage_key].append(tfr_avg)
 
 # ------------------------------------------------------------
 # HELPERS

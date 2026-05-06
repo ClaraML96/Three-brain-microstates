@@ -25,30 +25,44 @@ freq_bands = {
     "beta":  (13, 30),
 }
 
+# condition_labels = {
+#     "Condition_0": "Solo — With Feedback",    
+#     "Condition_1": "Solo — No Feedback",       
+#     # "Condition_2": "Duo P1+P2 — With Feedback",
+#     # "Condition_3": "Duo P1+P2 — No Feedback",
+#     # "Condition_4": "Duo P1+P3 — With Feedback",
+#     # "Condition_5": "Duo P1+P3 — No Feedback",
+#     # "Condition_6": "Duo P2+P3 — With Feedback",
+#     # "Condition_7": "Duo P2+P3 — No Feedback",
+#     "Condition_8": "Trio — With Feedback",
+#     "Condition_9": "Trio — No Feedback",
+# }
+
+condition_remap = {
+    "Condition_2": "Duo_With_Feedback",
+    "Condition_3": "Duo_No_Feedback",
+    "Condition_4": "Duo_With_Feedback",
+    "Condition_5": "Duo_No_Feedback",
+    "Condition_6": "Duo_With_Feedback",
+    "Condition_7": "Duo_No_Feedback",
+}
+
 condition_labels = {
-    "Condition_0": "Solo — With Feedback",    
-    "Condition_1": "Solo — No Feedback",       
-    "Condition_2": "Duo P1+P2 — With Feedback",
-    "Condition_3": "Duo P1+P2 — No Feedback",
-    "Condition_4": "Duo P1+P3 — With Feedback",
-    "Condition_5": "Duo P1+P3 — No Feedback",
-    "Condition_6": "Duo P2+P3 — With Feedback",
-    "Condition_7": "Duo P2+P3 — No Feedback",
+    "Condition_0": "Solo — With Feedback",
+    "Condition_1": "Solo — No Feedback",
+    "Duo_With_Feedback": "Duo — With Feedback",
+    "Duo_No_Feedback":   "Duo — No Feedback",
     "Condition_8": "Trio — With Feedback",
     "Condition_9": "Trio — No Feedback",
 }
 
 condition_colors = {
-    "Condition_0": "firebrick",      
-    "Condition_1": "steelblue",      
-    "Condition_2": "darkorange",     
-    "Condition_3": "cornflowerblue", 
-    "Condition_4": "sandybrown",
-    "Condition_5": "royalblue",
-    "Condition_6": "peru",
-    "Condition_7": "dodgerblue",
-    "Condition_8": "darkred",        
-    "Condition_9": "seagreen",       
+    "Condition_0": "firebrick",
+    "Condition_1": "steelblue",
+    "Duo_With_Feedback": "darkorange",
+    "Duo_No_Feedback":   "cornflowerblue",
+    "Condition_8": "darkred",
+    "Condition_9": "seagreen",
 }
 
 # Morlet parameters
@@ -90,9 +104,11 @@ for pid, part in participants:
         tfr_avg.apply_baseline(baseline_window, mode="percent")
         tfr_avg.data *= 100
 
-        if condition not in group_tfr:
-            group_tfr[condition] = []
-        group_tfr[condition].append(tfr_avg)
+        storage_key = condition_remap.get(condition, condition)
+
+        if storage_key not in group_tfr:
+            group_tfr[storage_key] = []
+        group_tfr[storage_key].append(tfr_avg)
 
 # ------------------------------------------------------------
 # Averaging functions
