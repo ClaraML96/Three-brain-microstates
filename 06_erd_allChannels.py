@@ -2,27 +2,21 @@ import os
 import numpy as np
 import mne
 import matplotlib.pyplot as plt
-from scipy.ndimage import gaussian_filter1d
-import glob
 
 # ------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------
-DATA_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\FG_Data_For_Students\PreprocessedEEGData"
-EPOCH_FILES = sorted(glob.glob(os.path.join(DATA_DIR, "*_FG_preprocessed-epo.fif")))
-print(f"Found {len(EPOCH_FILES)} epoch files")
+DATA_DIR = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\data\ica_cleaned"
 
 output_dir = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\figures\erd"
 os.makedirs(output_dir, exist_ok=True)
 
-# for epoch_file in EPOCH_FILES:
-#     print(f"\nProcessing file: {os.path.basename(epoch_file)}")
-#     epochs = mne.read_epochs(epoch_file, preload=False)  # preload=False just for inspection
-    
-#     print("Conditions found:")
-#     for condition, code in epochs.event_id.items():
-#         n_trials = len(epochs[condition])
-#         print(f"  '{condition}' (code {code}): {n_trials} trials")
+participants = [
+    ("301", 1), ("301", 2), ("301", 3),
+    ("302", 1), ("302", 2), ("302", 3),
+    ("303", 1), ("303", 2), ("303", 3),
+    ("304", 1), ("304", 2), ("304", 3),
+]
 
 # channels_of_interest = ["C3", "O1", "O2", "Oz"]
 
@@ -32,55 +26,54 @@ freq_bands = {
 }
 
 condition_remap = {
-    "T12P":  "Duo_With_Feedback",
-    "T13P":  "Duo_With_Feedback",
-    "T23P":  "Duo_With_Feedback",
-    "T12Pn": "Duo_No_Feedback",
-    "T13Pn": "Duo_No_Feedback",
-    "T23Pn": "Duo_No_Feedback",
+    "Condition_2": "Duo_With_Feedback",
+    "Condition_3": "Duo_No_Feedback",
+    "Condition_4": "Duo_With_Feedback",
+    "Condition_5": "Duo_No_Feedback",
+    "Condition_6": "Duo_With_Feedback",
+    "Condition_7": "Duo_No_Feedback",
 }
 
 condition_labels = {
-    "T1P":             "Solo — With Feedback",
-    "T1Pn":            "Solo — No Feedback",
-    "T3P":             "Trio — With Feedback",
-    "T3Pn":            "Trio — No Feedback",
+    "Condition_0": "Solo — With Feedback",
+    "Condition_1": "Solo — No Feedback",
     "Duo_With_Feedback": "Duo — With Feedback",
     "Duo_No_Feedback":   "Duo — No Feedback",
+    "Condition_8": "Trio — With Feedback",
+    "Condition_9": "Trio — No Feedback",
 }
 
 condition_colors = {
-    "T1P":             "firebrick",
-    "T1Pn":            "steelblue",
-    "T3P":             "darkred",
-    "T3Pn":            "seagreen",
+    "Condition_0": "firebrick",
+    "Condition_1": "steelblue",
     "Duo_With_Feedback": "darkorange",
     "Duo_No_Feedback":   "cornflowerblue",
+    "Condition_8": "darkred",
+    "Condition_9": "seagreen",
 }
 
 # Morlet parameters
 foi = np.linspace(1, 30, 30, dtype=int)
 n_cycles = 3 + 0.5 * foi
-# wavelet_length = (5/np.pi)*(n_cycles*sfreq)/foi-1 
 baseline_window = (-0.25, 0)
 
 # Time window to plot (matching paper)
 plot_tmin, plot_tmax = 0.0, 4.0
 
 # ------------------------------------------------------------
-# STORAGE
+# Storage
 # ------------------------------------------------------------
 group_tfr = {}
 
 # ------------------------------------------------------------
-# LOAD PREPROCESSED FILES
+# Looping over participants and conditions
 # ------------------------------------------------------------
-for epoch_file in EPOCH_FILES:
-    if not os.path.isfile(epoch_file):
-        raise FileNotFoundError(f"Could not find epochs file: {epoch_file}")
+for pid, part in participants:
+    print(f"\nProcessing participant {pid}, part {part}")
 
-    print(f"\nProcessing file: {os.path.basename(epoch_file)}")
+    epoch_file = os.path.join(DATA_DIR, f"{pid}_p{part}_ica_cleaned-epo.fif")
     epochs = mne.read_epochs(epoch_file, preload=True)
+    # epochs.pick(channels_of_interest)
 
     for condition in epochs.event_id:
         print(f"  Computing TFR for condition: {condition}")
@@ -105,11 +98,11 @@ for epoch_file in EPOCH_FILES:
         group_tfr[storage_key].append(tfr_avg)
 
 # ------------------------------------------------------------
-# HELPERS
+# Averaging functions
 # ------------------------------------------------------------
 def band_erd(tfr, fmin, fmax):
     f_mask = (tfr.freqs >= fmin) & (tfr.freqs <= fmax)
-    return tfr.data[:, f_mask, :].mean(axis=(0, 1))  # average over channels AND frequencies
+    return tfr.data[:, f_mask, :].mean(axis=(0, 1))  
 
 def group_mean_sem(tfr_list, fmin, fmax):
     subject_erds = np.array([band_erd(tfr, fmin, fmax) for tfr in tfr_list])
@@ -120,8 +113,6 @@ def group_mean_sem(tfr_list, fmin, fmax):
 # ------------------------------------------------------------
 # Get time axis and mask to 0–4s for plotting
 # ------------------------------------------------------------
-# smoothing_sigma = 10  # in samples, adjust to taste
-
 first_condition = list(group_tfr.keys())[0]
 times = group_tfr[first_condition][0].times
 time_mask = (times >= plot_tmin) & (times <= plot_tmax)
@@ -130,7 +121,7 @@ times_plot = times[time_mask]
 conditions = list(group_tfr.keys())
 
 # ------------------------------------------------------------
-# PLOT: one figure, one subplot per frequency band
+# PLOT: one subplot per frequency band (alpha, beta)
 # ------------------------------------------------------------
 fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=False)
 
@@ -162,10 +153,10 @@ handles, labels = axes[0].get_legend_handles_labels()
 fig.legend(handles, labels, loc="upper right", fontsize=8, framealpha=0.8,
            bbox_to_anchor=(1.18, 1.0))
 
-fig.suptitle("Li's ERD/ERS for all participants", fontsize=14, fontweight="bold")
+fig.suptitle("ERD/ERS", fontsize=14, fontweight="bold")
 plt.tight_layout()
 
-output_file = os.path.join(output_dir, "erd_ers_Li_allparticipants.png")
+output_file = os.path.join(output_dir, "erd_ers.png")
 fig.savefig(output_file, dpi=300, bbox_inches="tight")
 print(f"Saved: {output_file}")
 plt.close(fig)
