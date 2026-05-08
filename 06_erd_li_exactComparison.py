@@ -22,7 +22,7 @@ participants = [
     ("304A"), ("304B"), ("304C"),
 ]
 
-channels_of_interest = ["C3", "O1", "O2", "Oz"]
+# channels_of_interest = ["C3", "O1", "O2", "Oz"]
 
 # Only include these participants when processing epoch files
 ALLOWED_PARTICIPANTS = set(participants)
@@ -93,7 +93,7 @@ for epoch_file in EPOCH_FILES:
     # for condition in epochs.event_id:
     #     print(f"{condition}: {len(epochs[condition])} trials")
 
-    epochs.pick(channels_of_interest)
+    # epochs.pick(channels_of_interest)
 
     for condition in epochs.event_id:
         print(f"  Computing TFR for condition: {condition}")
@@ -120,13 +120,12 @@ for epoch_file in EPOCH_FILES:
 # ------------------------------------------------------------
 # HELPERS
 # ------------------------------------------------------------
-def band_erd(tfr, channel, fmin, fmax):
-    ch_idx = tfr.ch_names.index(channel)
+def band_erd(tfr, fmin, fmax):
     f_mask = (tfr.freqs >= fmin) & (tfr.freqs <= fmax)
-    return tfr.data[ch_idx, f_mask, :].mean(axis=0)
+    return tfr.data[:, f_mask, :].mean(axis=(0, 1))  # average over channels AND frequencies
 
-def group_mean_sem(tfr_list, channel, fmin, fmax):
-    subject_erds = np.array([band_erd(tfr, channel, fmin, fmax) for tfr in tfr_list])
+def group_mean_sem(tfr_list, fmin, fmax):
+    subject_erds = np.array([band_erd(tfr, fmin, fmax) for tfr in tfr_list])
     mean = subject_erds.mean(axis=0)
     sem = subject_erds.std(axis=0) / np.sqrt(len(subject_erds))
     return mean, sem
@@ -144,52 +143,42 @@ times_plot = times[time_mask]
 conditions = list(group_tfr.keys())
 
 # ------------------------------------------------------------
-# PLOT: one figure per channel
-#        one subplot per frequency band (alpha, beta)
-#        one line per condition with shaded SEM
+# PLOT: one line per condition with shaded SEM
 # ------------------------------------------------------------
-for channel in channels_of_interest:
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=False)
+fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=False)
 
-    for ax, (band_name, (fmin, fmax)) in zip(axes, freq_bands.items()):
-        for condition in conditions:
-            if condition not in condition_labels:
-                continue
-            # if condition not in condition_labels:
-            #     print(f"WARNING: '{condition}' not in condition_labels, skipping")
-            #     continue
+for ax, (band_name, (fmin, fmax)) in zip(axes, freq_bands.items()):
+    for condition in conditions:
+        if condition not in condition_labels:
+            continue
 
-            color = condition_colors.get(condition, "gray")
-            label = condition_labels[condition]
-            mean, sem = group_mean_sem(group_tfr[condition], channel, fmin, fmax)
+        color = condition_colors.get(condition, "gray")
+        label = condition_labels[condition]
+        mean, sem = group_mean_sem(group_tfr[condition], fmin, fmax)
 
-            # mean_plot = gaussian_filter1d(mean[time_mask], sigma=smoothing_sigma)
-            # sem_plot  = gaussian_filter1d(sem[time_mask],  sigma=smoothing_sigma)
+        mean_plot = mean[time_mask]
+        sem_plot = sem[time_mask]
 
-            # Crop to 0–4s for plotting only
-            mean_plot = mean[time_mask]
-            sem_plot = sem[time_mask]
+        ax.plot(times_plot, mean_plot, lw=1.8, color=color, label=label)
+        ax.fill_between(times_plot, mean_plot - sem_plot, mean_plot + sem_plot,
+                        alpha=0.2, color=color)
 
-            ax.plot(times_plot, mean_plot, lw=1.8, color=color, label=label)
-            ax.fill_between(times_plot, mean_plot - sem_plot, mean_plot + sem_plot,
-                            alpha=0.2, color=color)
+    ax.axhline(0, color="k", lw=0.8, ls="--")
+    ax.axvline(0, color="gray", lw=0.8, ls=":")
+    ax.set_xlim(plot_tmin, plot_tmax)
+    ax.set_title(band_name.capitalize(), fontsize=12, fontweight="bold")
+    ax.set_xlabel("Time (s)")
+    if ax == axes[0]:
+        ax.set_ylabel("Power (%)")
 
-        ax.axhline(0, color="k", lw=0.8, ls="--")
-        ax.axvline(0, color="gray", lw=0.8, ls=":")
-        ax.set_xlim(plot_tmin, plot_tmax)
-        ax.set_title(band_name.capitalize(), fontsize=12, fontweight="bold")
-        ax.set_xlabel("Time (s)")
-        if ax == axes[0]:
-            ax.set_ylabel("Power (%)")
+handles, labels = axes[0].get_legend_handles_labels()
+fig.legend(handles, labels, loc="upper right", fontsize=8, framealpha=0.8,
+           bbox_to_anchor=(1.18, 1.0))
 
-    handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper right", fontsize=8, framealpha=0.8,
-               bbox_to_anchor=(1.18, 1.0))
+fig.suptitle("Li's ERD/ERS", fontsize=14, fontweight="bold")
+plt.tight_layout()
 
-    fig.suptitle(f"Li's ERD/ERS - {channel}", fontsize=14, fontweight="bold")
-    plt.tight_layout()
-
-    output_file = os.path.join(output_dir, f"erd_Li_sameData_{channel}.png")
-    fig.savefig(output_file, dpi=300, bbox_inches="tight")
-    print(f"Saved: {output_file}")
-    plt.close(fig)
+output_file = os.path.join(output_dir, "Li_erd_ers.png")
+fig.savefig(output_file, dpi=300, bbox_inches="tight")
+print(f"Saved: {output_file}")
+plt.close(fig)
