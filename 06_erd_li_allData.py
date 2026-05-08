@@ -15,17 +15,6 @@ print(f"Found {len(EPOCH_FILES)} epoch files")
 output_dir = r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\figures\erd"
 os.makedirs(output_dir, exist_ok=True)
 
-# for epoch_file in EPOCH_FILES:
-#     print(f"\nProcessing file: {os.path.basename(epoch_file)}")
-#     epochs = mne.read_epochs(epoch_file, preload=False)  # preload=False just for inspection
-    
-#     print("Conditions found:")
-#     for condition, code in epochs.event_id.items():
-#         n_trials = len(epochs[condition])
-#         print(f"  '{condition}' (code {code}): {n_trials} trials")
-
-# channels_of_interest = ["C3", "O1", "O2", "Oz"]
-
 freq_bands = {
     "alpha": (8, 12),
     "beta":  (13, 30),
@@ -81,6 +70,7 @@ for epoch_file in EPOCH_FILES:
 
     print(f"\nProcessing file: {os.path.basename(epoch_file)}")
     epochs = mne.read_epochs(epoch_file, preload=True)
+    epochs.pick(["C3", "C4", "Cz", "O1", "O2", "Oz", "P3", "P4"])
 
     for condition in epochs.event_id:
         print(f"  Computing TFR for condition: {condition}")
