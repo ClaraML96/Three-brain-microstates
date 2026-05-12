@@ -62,6 +62,14 @@ plot_tmin, plot_tmax = 0.0, 4.0
 group_tfr = {}
 
 # ------------------------------------------------------------
+# DEBUG: Check event IDs in first 2 files
+# ------------------------------------------------------------
+for epoch_file in EPOCH_FILES[:2]:  # check first 2 files
+    epochs = mne.read_epochs(epoch_file, preload=False)
+    print(f"\n{os.path.basename(epoch_file)}")
+    print("Event IDs:", epochs.event_id)
+
+# ------------------------------------------------------------
 # LOAD PREPROCESSED FILES
 # ------------------------------------------------------------
 for epoch_file in EPOCH_FILES:

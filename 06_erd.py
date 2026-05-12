@@ -25,19 +25,6 @@ freq_bands = {
     "beta":  (13, 30),
 }
 
-# condition_labels = {
-#     "Condition_0": "Solo — With Feedback",    
-#     "Condition_1": "Solo — No Feedback",       
-#     # "Condition_2": "Duo P1+P2 — With Feedback",
-#     # "Condition_3": "Duo P1+P2 — No Feedback",
-#     # "Condition_4": "Duo P1+P3 — With Feedback",
-#     # "Condition_5": "Duo P1+P3 — No Feedback",
-#     # "Condition_6": "Duo P2+P3 — With Feedback",
-#     # "Condition_7": "Duo P2+P3 — No Feedback",
-#     "Condition_8": "Trio — With Feedback",
-#     "Condition_9": "Trio — No Feedback",
-# }
-
 condition_remap = {
     "Condition_2": "Duo_With_Feedback",
     "Condition_3": "Duo_No_Feedback",

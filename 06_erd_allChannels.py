@@ -18,8 +18,6 @@ participants = [
     ("304", 1), ("304", 2), ("304", 3),
 ]
 
-# channels_of_interest = ["C3", "O1", "O2", "Oz"]
-
 freq_bands = {
     "alpha": (8, 12),
     "beta":  (13, 30),
@@ -156,7 +154,7 @@ fig.legend(handles, labels, loc="upper right", fontsize=8, framealpha=0.8,
 fig.suptitle("ERD/ERS", fontsize=14, fontweight="bold")
 plt.tight_layout()
 
-output_file = os.path.join(output_dir, "erd_ers.png")
+output_file = os.path.join(output_dir, "erd.png")
 fig.savefig(output_file, dpi=300, bbox_inches="tight")
 print(f"Saved: {output_file}")
 plt.close(fig)
