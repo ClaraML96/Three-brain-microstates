@@ -71,7 +71,6 @@ for pid, part in participants:
 
     epoch_file = os.path.join(DATA_DIR, f"{pid}_p{part}_ica_cleaned-epo.fif")
     epochs = mne.read_epochs(epoch_file, preload=True)
-    # epochs.pick(channels_of_interest)
 
     for condition in epochs.event_id:
         print(f"  Computing TFR for condition: {condition}")

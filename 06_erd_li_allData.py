@@ -53,21 +53,13 @@ n_cycles = 3 + 0.5 * foi
 # wavelet_length = (5/np.pi)*(n_cycles*sfreq)/foi-1 
 baseline_window = (-0.25, 0)
 
-# Time window to plot (matching paper)
+# Time window to plot
 plot_tmin, plot_tmax = 0.0, 4.0
 
 # ------------------------------------------------------------
 # STORAGE
 # ------------------------------------------------------------
 group_tfr = {}
-
-# ------------------------------------------------------------
-# DEBUG: Check event IDs in first 2 files
-# ------------------------------------------------------------
-for epoch_file in EPOCH_FILES[:2]:  # check first 2 files
-    epochs = mne.read_epochs(epoch_file, preload=False)
-    print(f"\n{os.path.basename(epoch_file)}")
-    print("Event IDs:", epochs.event_id)
 
 # ------------------------------------------------------------
 # LOAD PREPROCESSED FILES
@@ -107,7 +99,7 @@ for epoch_file in EPOCH_FILES:
 # ------------------------------------------------------------
 def band_erd(tfr, fmin, fmax):
     f_mask = (tfr.freqs >= fmin) & (tfr.freqs <= fmax)
-    return tfr.data[:, f_mask, :].mean(axis=(0, 1))  # average over channels AND frequencies
+    return tfr.data[:, f_mask, :].mean(axis=(0, 1))  
 
 def group_mean_sem(tfr_list, fmin, fmax):
     subject_erds = np.array([band_erd(tfr, fmin, fmax) for tfr in tfr_list])
