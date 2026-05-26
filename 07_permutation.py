@@ -98,14 +98,12 @@ for pid in PIDS:
             else:
                 nonfriend_tfr[cond].append(tfr_avg)
 
-print("\nAll TFRs loaded.")
-
 # ============================================================
 # HELPER FUNCTIONS
 # ============================================================
 
+# (n_subjects, n_channels, n_times) averaged over frequency band
 def band_time_power(tfr_list, fmin, fmax, tmin, tmax):
-    """(n_subjects, n_channels, n_times) averaged over frequency band."""
     out = []
     for tfr in tfr_list:
         f_mask = (tfr.freqs >= fmin) & (tfr.freqs <= fmax)
@@ -113,33 +111,27 @@ def band_time_power(tfr_list, fmin, fmax, tmin, tmax):
         out.append(tfr.data[:, f_mask, :][:, :, t_mask].mean(axis=1))
     return np.array(out)
 
-
+# Single scalar ERD value per subject (mean over ch, time, freq)
 def scalar_erd(tfr_list, fmin, fmax, tmin, tmax):
-    """Single scalar ERD value per subject (mean over ch, time, freq)."""
     arr = band_time_power(tfr_list, fmin, fmax, tmin, tmax)
     return arr.mean(axis=(1, 2))
 
-
+# Independent samples Cohen's d (pooled SD)
 def cohens_d_ind(a, b):
-    """Independent samples Cohen's d (pooled SD)."""
     n1, n2 = len(a), len(b)
     pooled_sd = np.sqrt(((n1-1)*a.std(ddof=1)**2 + (n2-1)*b.std(ddof=1)**2) / (n1+n2-2))
     return (a.mean() - b.mean()) / (pooled_sd + 1e-12)
 
-
+# Convert MNE flat-index cluster to boolean time mask
 def cluster_time_mask(cluster, n_ch, n_t):
-    """Convert MNE flat-index cluster to boolean time mask."""
     flat_idx = cluster[0]
     mask_2d  = np.zeros((n_ch, n_t), dtype=bool)
     mask_2d.flat[flat_idx] = True
     return mask_2d.any(axis=0)
 
-
+# Average TFRs across several condition keys, one observation per subject. 
+# Subjects must be present in all keys.
 def collapse_conditions(tfr_dict, cond_keys):
-    """
-    Average TFRs across several condition keys, one observation per subject.
-    Subjects must be present in all keys.
-    """
     available = [tfr_dict[k] for k in cond_keys if k in tfr_dict and tfr_dict[k]]
     if not available:
         return []
@@ -157,7 +149,7 @@ def collapse_conditions(tfr_dict, cond_keys):
 
 
 # ============================================================
-# STEP 2 — Run cluster permutation for every condition × band
+# STEP 2 — Run cluster permutation for every condition x band
 # ============================================================
 results = {}   # keyed by (cond_label, band_name)
 
@@ -224,7 +216,7 @@ for cond_label, cond_keys, row_lbl, col_lbl in CONDITIONS:
         print(f"    clusters: {len(clusters)} total, {sig} significant")
 
 # ============================================================
-# STEP 3 — FDR correction across all condition × band p-values
+# STEP 3 — FDR correction across all condition x band p-values
 # ============================================================
 if all_p_scalar:
     keys_ordered = [k for k, _ in all_p_scalar]
@@ -246,7 +238,6 @@ if all_p_scalar:
 
 # ============================================================
 # STEP 4 — PLOTS  (one figure per frequency band)
-#          Layout mirrors Fig. 2:  rows=feedback, cols=condition
 # ============================================================
 
 def sig_label(p):
@@ -255,9 +246,8 @@ def sig_label(p):
     if p < 0.05:  return "*"
     return f"p={p:.3f}"
 
-
+# Draw a one-sided (half) violin at x=pos
 def half_violin(ax, data, pos, color, side="left", alpha=0.45, bw=0.15):
-    """Draw a one-sided (half) violin at x=pos."""
     from scipy.stats import gaussian_kde
     if len(data) < 2:
         return
@@ -406,4 +396,3 @@ for cond_label, _, _, _ in CONDITIONS:
             f"{res['cohens_d']:>+9.3f}  "
             f"{sig_cls:>14}"
         )
-print("=" * 100)
