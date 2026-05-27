@@ -1,398 +1,415 @@
 import os
+import glob
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from matplotlib.patches import FancyArrowPatch
-from scipy import stats
-from scipy.stats import false_discovery_control   # scipy >= 1.11
+from scipy import stats as scipy_stats
 import mne
-from mne.stats import permutation_cluster_1samp_test
-from mne.stats import permutation_cluster_test
+from mne.stats import spatio_temporal_cluster_1samp_test
 
-# ============================================================
+# ─────────────────────────────────────────────────────────────────────────────
 # CONFIGURATION
-# ============================================================
+# ─────────────────────────────────────────────────────────────────────────────
 DATA_DIR = (
-    r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet"
-    r"\Skrivebord\DTU\Human Centeret Artificial Intelligence"
-    r"\Thesis\data\ica_cleaned"
+    r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU"
+    r"\Human Centeret Artificial Intelligence\Thesis\FG_Data_For_Students"
+    r"\PreprocessedEEGData"
 )
+EPOCH_FILES = sorted(glob.glob(os.path.join(DATA_DIR, "*_FG_preprocessed-epo.fif")))
+
 OUTPUT_DIR = (
-    r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet"
-    r"\Skrivebord\DTU\Human Centeret Artificial Intelligence"
-    r"\Thesis\figures\statistics"
+    r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU"
+    r"\Human Centeret Artificial Intelligence\Thesis\figures\cluster_perm"
 )
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# Friendship roles
-FRIEND_PARTS    = [1, 2]
-NONFRIEND_PARTS = [3]
-PIDS = ["301", "302", "303", "304"]
+# Channels of interest — order here defines the channel axis throughout
+CHANNELS = ["C3", "Cz", "C4", "P3", "Pz", "P4", "O1", "Oz", "O2"]
 
-# Morlet parameters (consistent across all scripts)
-FOI      = np.linspace(1, 30, 30, dtype=int)
-N_CYCLES = 3 + 0.5 * FOI
-BASELINE = (-0.25, 0)
-TMIN, TMAX = 0.0, 4.0
-
+# Frequency bands
 FREQ_BANDS = {
     "alpha": (8, 12),
     "beta":  (13, 30),
 }
 
-# Conditions to analyse
-# Each entry: (label, [condition keys to average], row_label, col_label)
-CONDITIONS = [
-    ("Solo_NoFB",   ["Condition_1"],          "No Feedback",   "Solo interactions"),
-    ("Solo_WithFB", ["Condition_0"],          "With Feedback", "Solo interactions"),
-    ("Trio_NoFB",   ["Condition_9"],          "No Feedback",   "Triadic interactions"),
-    ("Trio_WithFB", ["Condition_8"],          "With Feedback", "Triadic interactions"),
+# TFR / Morlet parameters (must match your ERD pipeline)
+FOI      = np.linspace(1, 30, 30, dtype=int)
+N_CYCLES = 3 + 0.5 * FOI
+BASELINE = (-0.25, 0)        # seconds
+PLOT_TMIN, PLOT_TMAX = 0.0, 4.0
+
+# Cluster permutation settings
+N_PERMUTATIONS = 1024        # increase to 5000 for final analysis
+ALPHA_CLUSTER  = 0.05        # cluster-forming threshold (p-value, two-tailed)
+P_ACCEPT       = 0.05        # cluster significance level
+
+# Solo/Trio contrasts only
+CONTRASTS = [
+    ("solo_feedback",    "T1P",  "T1Pn", "Solo: With vs. No Feedback"),
+    ("trio_feedback",    "T3P",  "T3Pn", "Trio: With vs. No Feedback"),
+    ("solo_vs_trio_fb",  "T1P",  "T3P",  "Solo vs. Trio (With Feedback)"),
+    ("solo_vs_trio_nfb", "T1Pn", "T3Pn", "Solo vs. Trio (No Feedback)"),
 ]
 
-ALL_COND_KEYS = list({k for _, keys, _, _ in CONDITIONS for k in keys})
+COND_LABELS = {
+    "T1P":  "Solo — With Feedback",
+    "T1Pn": "Solo — No Feedback",
+    "T3P":  "Trio — With Feedback",
+    "T3Pn": "Trio — No Feedback",
+}
 
-N_PERMUTATIONS = 1000
-T_THRESHOLD    = 2.0
+COLORS = {"a": "firebrick", "b": "steelblue"}
 
-# Colours matching the paper figure
-C_FRIEND    = "#d6604d"   # orange  (Friends)
-C_NONFRIEND = "#4393c3"   # blue    (Non-friends)
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 1 — Load epochs, compute TFR, store per-subject AverageTFR objects
+# ─────────────────────────────────────────────────────────────────────────────
+print(f"Found {len(EPOCH_FILES)} epoch files\n")
 
-# ============================================================
-# STEP 1 — Load TFRs
-# ============================================================
-friend_tfr    = {c: [] for c in ALL_COND_KEYS}
-nonfriend_tfr = {c: [] for c in ALL_COND_KEYS}
+# group_tfr[condition_key] = [AverageTFR_subject1, AverageTFR_subject2, ...]
+group_tfr: dict[str, list] = {}
 
-for pid in PIDS:
-    for part in [1, 2, 3]:
-        epoch_file = os.path.join(
-            DATA_DIR, f"{pid}_p{part}_ica_cleaned-epo.fif"
+# We also need one Info object to build the adjacency matrix later
+info_ref = None
+
+for epoch_file in EPOCH_FILES:
+    if not os.path.isfile(epoch_file):
+        raise FileNotFoundError(epoch_file)
+
+    print(f"Processing: {os.path.basename(epoch_file)}")
+    epochs = mne.read_epochs(epoch_file, preload=True)
+
+    # Keep only the channels we want, in the order defined above
+    available = [ch for ch in CHANNELS if ch in epochs.ch_names]
+    epochs.pick(available)
+
+    if info_ref is None:
+        info_ref = epochs.info.copy()
+
+    # Only Solo and Trio conditions
+    solo_trio_keys = [k for k in epochs.event_id if k in ("T1P", "T1Pn", "T3P", "T3Pn")]
+
+    for condition in solo_trio_keys:
+        epochs_cond = epochs[condition]
+
+        tfr = epochs_cond.compute_tfr(
+            method="morlet",
+            freqs=FOI,
+            n_cycles=N_CYCLES,
+            return_itc=False,
+            average=False,
         )
-        if not os.path.exists(epoch_file):
-            print(f"  Missing: {epoch_file}")
-            continue
+        tfr_avg = tfr.average()
+        tfr_avg.apply_baseline(BASELINE, mode="percent")
+        tfr_avg.data *= 100  # → % signal change
 
-        role = "friend" if part in FRIEND_PARTS else "nonfriend"
-        print(f"Loading {pid} part {part}  [{role}]")
-        epochs = mne.read_epochs(epoch_file, preload=True)
+        group_tfr.setdefault(condition, []).append(tfr_avg)
 
-        for cond in ALL_COND_KEYS:
-            if cond not in epochs.event_id:
-                print(f"  '{cond}' not found — skipping")
-                continue
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 2 — Build channel adjacency matrix from the electrode montage
+# ─────────────────────────────────────────────────────────────────────────────
+adjacency, ch_names_adj = mne.channels.find_ch_adjacency(info_ref, ch_type="eeg")
 
-            tfr = epochs[cond].compute_tfr(
-                method="morlet",
-                freqs=FOI,
-                n_cycles=N_CYCLES,
-                return_itc=False,
-                average=False,
-            )
-            tfr_avg = tfr.average()
-            tfr_avg.apply_baseline(BASELINE, mode="percent")
-            tfr_avg.data *= 100
+# Reorder to match our CHANNELS list (may differ from info order)
+ch_order = [info_ref.ch_names.index(ch) for ch in info_ref.ch_names]
+# adjacency already matches info_ref order — just note the channel order
+print(f"\nChannel adjacency built for: {info_ref.ch_names}")
+print(f"Adjacency matrix shape: {adjacency.shape}\n")
 
-            if role == "friend":
-                friend_tfr[cond].append(tfr_avg)
-            else:
-                nonfriend_tfr[cond].append(tfr_avg)
+# ─────────────────────────────────────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+# Frequency-averaged ERD for every channel at every (masked) time point
+def band_spatiotemporal(tfr, fmin: float, fmax: float,
+                        t_mask: np.ndarray) -> np.ndarray:
+    f_mask = (tfr.freqs >= fmin) & (tfr.freqs <= fmax)
+    # mean over frequency axis -> (n_channels, n_times)
+    band_data = tfr.data[:, f_mask, :].mean(axis=1)
+    # apply time mask and transpose -> (n_times, n_channels)
 
-# ============================================================
-# HELPER FUNCTIONS
-# ============================================================
+    # Returns
+    # -------
+    # arr : (n_times_masked, n_channels)
 
-# (n_subjects, n_channels, n_times) averaged over frequency band
-def band_time_power(tfr_list, fmin, fmax, tmin, tmax):
-    out = []
-    for tfr in tfr_list:
-        f_mask = (tfr.freqs >= fmin) & (tfr.freqs <= fmax)
-        t_mask = (tfr.times >= tmin) & (tfr.times <= tmax)
-        out.append(tfr.data[:, f_mask, :][:, :, t_mask].mean(axis=1))
-    return np.array(out)
+    return band_data[:, t_mask].T
 
-# Single scalar ERD value per subject (mean over ch, time, freq)
-def scalar_erd(tfr_list, fmin, fmax, tmin, tmax):
-    arr = band_time_power(tfr_list, fmin, fmax, tmin, tmax)
-    return arr.mean(axis=(1, 2))
+# Build X = condA − condB for the paired cluster test
+def build_X(tfr_list_a, tfr_list_b, fmin, fmax, times_full, tmin, tmax):
+    t_mask = (times_full >= tmin) & (times_full <= tmax)
+    n = min(len(tfr_list_a), len(tfr_list_b))
 
-# Independent samples Cohen's d (pooled SD)
-def cohens_d_ind(a, b):
-    n1, n2 = len(a), len(b)
-    pooled_sd = np.sqrt(((n1-1)*a.std(ddof=1)**2 + (n2-1)*b.std(ddof=1)**2) / (n1+n2-2))
-    return (a.mean() - b.mean()) / (pooled_sd + 1e-12)
+    st_a = np.stack([band_spatiotemporal(t, fmin, fmax, t_mask)
+                     for t in tfr_list_a[:n]])   # (n, n_times, n_ch)
+    st_b = np.stack([band_spatiotemporal(t, fmin, fmax, t_mask)
+                     for t in tfr_list_b[:n]])
 
-# Convert MNE flat-index cluster to boolean time mask
-def cluster_time_mask(cluster, n_ch, n_t):
-    flat_idx = cluster[0]
-    mask_2d  = np.zeros((n_ch, n_t), dtype=bool)
-    mask_2d.flat[flat_idx] = True
-    return mask_2d.any(axis=0)
+    # Returns
+    # -------
+    # X      : (n_subjects, n_times, n_channels)  — difference array
+    # st_a   : (n_subjects, n_times, n_channels)  — raw condA values
+    # st_b   : (n_subjects, n_times, n_channels)  — raw condB values
 
-# Average TFRs across several condition keys, one observation per subject. 
-# Subjects must be present in all keys.
-def collapse_conditions(tfr_dict, cond_keys):
-    available = [tfr_dict[k] for k in cond_keys if k in tfr_dict and tfr_dict[k]]
-    if not available:
-        return []
-    n_sub = min(len(lst) for lst in available)
-    collapsed = []
-    for i in range(n_sub):
-        stacked = np.stack(
-            [tfr_dict[k][i].data for k in cond_keys if k in tfr_dict],
-            axis=0,
-        ).mean(axis=0)
-        tfr_mean      = tfr_dict[cond_keys[0]][i].copy()
-        tfr_mean.data = stacked
-        collapsed.append(tfr_mean)
-    return collapsed
+    return st_a - st_b, st_a, st_b
 
 
-# ============================================================
-# STEP 2 — Run cluster permutation for every condition x band
-# ============================================================
-results = {}   # keyed by (cond_label, band_name)
+# Paired spatio-temporal cluster permutation test
+def run_spatio_temporal_cluster(X, n_obs, adjacency):
+    df        = n_obs - 1
+    threshold = scipy_stats.t.ppf(1.0 - ALPHA_CLUSTER / 2.0, df=df)
 
-all_p_scalar = []   # collect scalar t-test p-values for FDR
+    # spatio_temporal_cluster_1samp_test expects (observations, times, space)
+    T_obs, clusters, cluster_p, H0 = spatio_temporal_cluster_1samp_test(
+        X,
+        n_permutations=N_PERMUTATIONS,
+        threshold=threshold,
+        tail=0,
+        adjacency=adjacency,
+        out_type="mask",   # boolean mask same shape as T_obs
+        verbose=True,
+        seed=42,
+        n_jobs=1,
+    )
 
-for cond_label, cond_keys, row_lbl, col_lbl in CONDITIONS:
-    f_col  = collapse_conditions(friend_tfr,    cond_keys)
-    nf_col = collapse_conditions(nonfriend_tfr, cond_keys)
-    n_f  = len(f_col)
-    n_nf = len(nf_col)
+    # Returns
+    # -------
+    # T_obs (n_times × n_channels), clusters, cluster_p, H0
+    return T_obs, clusters, cluster_p, H0
 
-    if n_f < 1 or n_nf < 1:
-        print(f"\n  [{cond_label}] Not enough data (n_friend={n_f}, n_nonfriend={n_nf}), skipping.")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 3 — Run all contrasts
+# ─────────────────────────────────────────────────────────────────────────────
+first_key  = next(iter(group_tfr))
+times_full = group_tfr[first_key][0].times
+t_mask     = (times_full >= PLOT_TMIN) & (times_full <= PLOT_TMAX)
+times_plot = times_full[t_mask]
+
+ch_names = info_ref.ch_names  # channel order used throughout
+
+results = {}  # (contrast_label, band_name) → dict
+
+for contrast_label, cond_a, cond_b, contrast_title in CONTRASTS:
+    if cond_a not in group_tfr or cond_b not in group_tfr:
+        print(f"Skipping {contrast_label}: missing condition data.")
         continue
 
     for band_name, (fmin, fmax) in FREQ_BANDS.items():
-        key = (cond_label, band_name)
-        print(f"\n  [{cond_label}] [{band_name}]  n_friend={n_f}, n_nonfriend={n_nf}")
+        print(f"\n{'='*60}")
+        print(f"Contrast: {contrast_title}  |  {band_name} ({fmin}–{fmax} Hz)")
 
-        # Scalar ERD for violin plot + independent samples t-test
-        erd_f  = scalar_erd(f_col,  fmin, fmax, TMIN, TMAX)
-        erd_nf = scalar_erd(nf_col, fmin, fmax, TMIN, TMAX)
-        t_stat, p_scalar = stats.ttest_ind(erd_f, erd_nf, equal_var=False)
-        cohens_d = cohens_d_ind(erd_f, erd_nf) 
+        X, st_a, st_b = build_X(
+            group_tfr[cond_a], group_tfr[cond_b],
+            fmin, fmax, times_full, PLOT_TMIN, PLOT_TMAX,
+        )
+        n_subjects = X.shape[0]
+        print(f"N subjects = {n_subjects},  "
+              f"data shape = {X.shape}  (subj × times × channels)")
 
-        # Full (n_sub, n_ch, n_t) arrays for cluster test
-        data_f  = band_time_power(f_col,  fmin, fmax, TMIN, TMAX)
-        data_nf = band_time_power(nf_col, fmin, fmax, TMIN, TMAX)
-        
-        T_obs, clusters, p_vals, _ = permutation_cluster_test(
-            [data_f, data_nf],          # list of two groups, unequal n is fine
-            n_permutations=N_PERMUTATIONS,
-            threshold=T_THRESHOLD,
-            tail=0,
-            n_jobs=1,
-            verbose=False,
+        T_obs, clusters, cluster_p, H0 = run_spatio_temporal_cluster(
+            X, n_subjects, adjacency
         )
 
-        n_ch, n_t = T_obs.shape
-        times_crop = np.linspace(TMIN, TMAX, n_t)
+        # Significant cluster mask: union over all sig. clusters
+        sig_mask = np.zeros_like(T_obs, dtype=bool)  # (n_times, n_channels)
+        sig_clusters = []
+        for c, p in zip(clusters, cluster_p):
+            if p < P_ACCEPT:
+                sig_mask |= c
+                sig_clusters.append((c, p))
 
-        results[key] = dict(
-            cond_label  = cond_label,
-            band_name   = band_name,
-            row_lbl     = row_lbl,
-            col_lbl     = col_lbl,
-            n_f         = n_f,
-            n_nf        = n_nf,
-            erd_f       = erd_f,
-            erd_nf      = erd_nf,
-            t_scalar    = t_stat,
-            p_scalar    = p_scalar,
-            cohens_d    = cohens_d,
-            T_obs       = T_obs,
-            clusters    = clusters,
-            p_vals      = p_vals,
-            times_crop  = times_crop,
-            data_f      = data_f,
-            data_nf     = data_nf,
+        results[(contrast_label, band_name)] = dict(
+            T_obs=T_obs,              # (n_times, n_channels)
+            clusters=clusters,
+            cluster_p=cluster_p,
+            sig_mask=sig_mask,        # (n_times, n_channels)
+            sig_clusters=sig_clusters,
+            mean_a=st_a.mean(axis=0), # (n_times, n_channels)
+            sem_a=st_a.std(axis=0) / np.sqrt(n_subjects),
+            mean_b=st_b.mean(axis=0),
+            sem_b=st_b.std(axis=0) / np.sqrt(n_subjects),
+            n_subjects=n_subjects,
+            contrast_title=contrast_title,
+            cond_a=cond_a,
+            cond_b=cond_b,
+            fmin=fmin,
+            fmax=fmax,
         )
-        all_p_scalar.append((key, p_scalar))
-        print(f"    independent t: t={t_stat:.3f}, p={p_scalar:.4f}, Cohen's d={cohens_d:.3f}")
-        sig = sum(p < 0.05 for p in p_vals)
-        print(f"    clusters: {len(clusters)} total, {sig} significant")
 
-# ============================================================
-# STEP 3 — FDR correction across all condition x band p-values
-# ============================================================
-if all_p_scalar:
-    keys_ordered = [k for k, _ in all_p_scalar]
-    raw_p        = np.array([p for _, p in all_p_scalar])
-    try:
-        fdr_p = false_discovery_control(raw_p, method="bh")
-    except Exception:
-        # scipy < 1.11 fallback — Benjamini-Hochberg manually
-        n_tests = len(raw_p)
-        order   = np.argsort(raw_p)
-        fdr_p   = np.empty(n_tests)
-        fdr_p[order] = raw_p[order] * n_tests / (np.arange(n_tests) + 1)
-        fdr_p = np.minimum.accumulate(fdr_p[::-1])[::-1]
-        fdr_p = np.minimum(fdr_p, 1.0)
+        print(f"Significant spatio-temporal clusters (p < {P_ACCEPT}): "
+              f"{len(sig_clusters)}")
+        for i, (c, p) in enumerate(sig_clusters):
+            t_idx, ch_idx = np.where(c)
+            t_span = times_plot[t_idx]
+            chans  = [ch_names[j] for j in np.unique(ch_idx)]
+            print(f"  Cluster {i+1}: {t_span.min():.3f}–{t_span.max():.3f} s  "
+                  f"| channels: {chans}  | p = {p:.4f}")
 
-    for k, pf in zip(keys_ordered, fdr_p):
-        results[k]["p_fdr"] = pf
-        print(f"  {k}: raw p={results[k]['p_scalar']:.4f}, FDR p={pf:.4f}")
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 4 — Plot: per-channel ERD timecourses with cluster shading
+#          One figure per contrast, sub-panels = channels, columns = bands
+# ─────────────────────────────────────────────────────────────────────────────
+def plot_per_channel(contrast_label, cond_a, cond_b, contrast_title):
+    bands   = list(FREQ_BANDS.keys())
+    n_ch    = len(ch_names)
+    n_bands = len(bands)
 
-# ============================================================
-# STEP 4 — PLOTS  (one figure per frequency band)
-# ============================================================
-
-def sig_label(p):
-    if p < 0.001: return "***"
-    if p < 0.01:  return "**"
-    if p < 0.05:  return "*"
-    return f"p={p:.3f}"
-
-# Draw a one-sided (half) violin at x=pos
-def half_violin(ax, data, pos, color, side="left", alpha=0.45, bw=0.15):
-    from scipy.stats import gaussian_kde
-    if len(data) < 2:
-        return
-    kde  = gaussian_kde(data, bw_method=bw)
-    ys   = np.linspace(data.min() - 0.05, data.max() + 0.05, 200)
-    xs   = kde(ys)
-    xs   = xs / xs.max() * 0.35   # normalise width
-    if side == "left":
-        ax.fill_betweenx(ys, pos - xs, pos, color=color, alpha=alpha)
-    else:
-        ax.fill_betweenx(ys, pos, pos + xs, color=color, alpha=alpha)
-
-
-ROW_LABELS = ["No Feedback", "With Feedback"]
-COL_LABELS_SOLO = ["Solo interactions"]
-COL_LABELS_TRIO = ["Triadic interactions"]
-
-# Map condition label → (row_idx, col_idx)
-COND_GRID = {
-    "Solo_NoFB":   (0, 0),
-    "Solo_WithFB": (1, 0),
-    "Trio_NoFB":   (0, 1),
-    "Trio_WithFB": (1, 1),
-}
-COL_TITLES = ["Solo interactions\n", "Triadic interactions\n"]
-
-rng = np.random.default_rng(42)
-
-for band_name, (fmin, fmax) in FREQ_BANDS.items():
     fig, axes = plt.subplots(
-        2, 2, figsize=(11, 9),
-        sharey="row",
-        gridspec_kw={"hspace": 0.42, "wspace": 0.18},
+        n_ch, n_bands,
+        figsize=(5 * n_bands, 2.2 * n_ch),
+        sharey=False, sharex=True,
     )
+    if n_ch == 1:
+        axes = axes[np.newaxis, :]
+
     fig.suptitle(
-        f"Friends vs Non-friends — {band_name.capitalize()} band ",
-        # f"({fmin}–{fmax} Hz)\n"
-        # r"ERD (% change from baseline), cluster permutation, FDR-corrected",
-        fontsize=12, fontweight="bold", y=0.98,
+        f"Cluster Permutation Test: {contrast_title}\n"
+        f"Per-channel ERD/ERS  |  gold = significant cluster (p < {P_ACCEPT})",
+        fontsize=12, fontweight="bold",
     )
 
-    # Column headers
-    for col, title in enumerate(COL_TITLES):
-        color = "#6a0dad" if col == 0 else "#228b22"   
-        axes[0, col].set_title(title, fontsize=11, fontweight="bold",
-                               color=color, pad=8)
-
-    # Row labels (y-axis)
-    for row, lbl in enumerate(ROW_LABELS):
-        axes[row, 0].set_ylabel(
-            f"{lbl}", fontsize=9, labelpad=6
-        )
-
-    for cond_label, _, _, _ in CONDITIONS:
-        row_idx, col_idx = COND_GRID[cond_label]
-        key = (cond_label, band_name)
+    for col, band_name in enumerate(bands):
+        key = (contrast_label, band_name)
         if key not in results:
             continue
+        r = results[key]
 
-        res = results[key]
-        ax  = axes[row_idx, col_idx]
+        for row, ch in enumerate(ch_names):
+            ax  = axes[row, col]
+            ci  = ch_names.index(ch)   # channel index in data
 
-        erd_f  = res["erd_f"]
-        erd_nf = res["erd_nf"]
-        p_use  = res.get("p_fdr", res["p_scalar"])   # prefer FDR
+            ma  = r["mean_a"][:, ci]
+            sa  = r["sem_a"][:, ci]
+            mb  = r["mean_b"][:, ci]
+            sb  = r["sem_b"][:, ci]
+            sig = r["sig_mask"][:, ci]  # boolean (n_times,)
 
-        # Half violins (split at centre)
-        half_violin(ax, erd_f,  0.5, C_FRIEND,    side="left")
-        half_violin(ax, erd_nf, 0.5, C_NONFRIEND, side="right")
+            ax.plot(times_plot, ma, lw=1.5, color=COLORS["a"],
+                    label=COND_LABELS.get(cond_a, cond_a))
+            ax.fill_between(times_plot, ma - sa, ma + sa,
+                            alpha=0.15, color=COLORS["a"])
 
-        # Jittered strip plots
-        jf  = rng.uniform(-0.15, -0.02, size=len(erd_f))
-        jnf = rng.uniform( 0.02,  0.15, size=len(erd_nf))
-        ax.scatter(0.5 + jf,  erd_f,  color=C_FRIEND,    s=22,
-                   alpha=0.80, zorder=3, edgecolors="none")
-        ax.scatter(0.5 + jnf, erd_nf, color=C_NONFRIEND, s=22,
-                   alpha=0.80, zorder=3, edgecolors="none")
+            ax.plot(times_plot, mb, lw=1.5, color=COLORS["b"],
+                    label=COND_LABELS.get(cond_b, cond_b))
+            ax.fill_between(times_plot, mb - sb, mb + sb,
+                            alpha=0.15, color=COLORS["b"])
 
-        # Mean ± SEM markers (black diamonds, matching Fig 2)
-        for val_arr, xpos in [(erd_f, 0.34), (erd_nf, 0.66)]:
-            mean_v = val_arr.mean()
-            sem_v  = val_arr.std(ddof=1) / np.sqrt(len(val_arr))
-            ax.errorbar(xpos, mean_v, yerr=sem_v,
-                        fmt="D", color="black", ms=5, capsize=3, lw=1.4,
-                        zorder=5)
+            # Shade significant time points for this channel
+            if sig.any():
+                # Convert boolean mask to contiguous spans
+                changes  = np.diff(sig.astype(int), prepend=0, append=0)
+                starts   = np.where(changes == 1)[0]
+                ends     = np.where(changes == -1)[0]
+                for s, e in zip(starts, ends):
+                    ax.axvspan(times_plot[s], times_plot[e - 1],
+                               color="gold", alpha=0.40)
 
-        # Reference line at 0
-        ax.axhline(0, color="k", lw=0.8, ls="--", alpha=0.5)
+            ax.axhline(0,   color="k",    lw=0.6, ls="--")
+            ax.axvline(0.0, color="gray", lw=0.6, ls=":")
+            ax.set_xlim(PLOT_TMIN, PLOT_TMAX)
+            ax.set_ylabel(f"{ch}\n(%)", fontsize=8)
 
-        # Significance bracket
-        y_vals  = np.concatenate([erd_f, erd_nf])
-        y_span  = y_vals.max() - y_vals.min()
-        y_top   = y_vals.max() + y_span * 0.14
-        slabel  = sig_label(p_use)
-        ax.plot([0.34, 0.34, 0.66, 0.66],
-                [y_top * 0.93, y_top, y_top, y_top * 0.93],
-                lw=1.2, color="k")
-        ax.text(0.50, y_top * 1.015, slabel,
-                ha="center", va="bottom", fontsize=10)
+            if row == 0:
+                fmin, fmax = r["fmin"], r["fmax"]
+                ax.set_title(
+                    f"{band_name.capitalize()} ({fmin}–{fmax} Hz)\n"
+                    f"N = {r['n_subjects']}",
+                    fontsize=10,
+                )
+            if row == n_ch - 1:
+                ax.set_xlabel("Time (s)", fontsize=9)
 
-        ax.set_xlim(0.0, 1.0)
-        ax.set_xticks([])
-        ax.tick_params(axis="y", labelsize=8)
+            # Legend only on the top-left panel
+            if row == 0 and col == 0:
+                ax.legend(fontsize=7, framealpha=0.8, loc="upper right")
 
-        # Annotate n
-        ax.text(0.98, 0.02, f"N = {res['n_f'] + res['n_nf']}",
-                transform=ax.transAxes, fontsize=7,
-                ha="right", va="bottom", color="dimgray")
-
-    # Shared legend
-    patch_f  = mpatches.Patch(color=C_FRIEND,    alpha=0.75, label="Friends")
-    patch_nf = mpatches.Patch(color=C_NONFRIEND, alpha=0.75, label="Non-friend")
-    fig.legend(handles=[patch_f, patch_nf],
-               loc="upper right", fontsize=9,
-               framealpha=0.85, edgecolor="none",
-               bbox_to_anchor=(1.0, 0.98))
-
-    fig.tight_layout()
-    out_path = os.path.join(OUTPUT_DIR,
-                            f"cluster_friends_vs_nonfriends_{band_name}.png")
-    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.tight_layout()
+    fname = os.path.join(OUTPUT_DIR, f"cluster_perm_perchannel_{contrast_label}.png")
+    fig.savefig(fname, dpi=300, bbox_inches="tight")
+    print(f"Saved: {fname}")
     plt.close(fig)
-    print(f"\nSaved: {out_path}")
 
-# ============================================================
-# STEP 5 — SUMMARY TABLE
-# ============================================================
-print("\n" + "=" * 100)
-print(f"{'Condition':<18} {'Band':<7} {'n_f':>3} {'n_nf':>3}  "
-      f"{'t':>7}  {'p_raw':>7}  {'p_FDR':>7}  "
-      f"{'Cohen\'s d':>9}  {'Sig.clusters':>14}")
-print("-" * 100)
-for cond_label, _, _, _ in CONDITIONS:
-    for band_name in FREQ_BANDS:
-        key = (cond_label, band_name)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 5 — Topographic cluster-mass map
+#          Shows how strongly each channel participates in sig. clusters
+# ─────────────────────────────────────────────────────────────────────────────
+def plot_topomap(contrast_label, cond_a, cond_b, contrast_title):
+    bands   = list(FREQ_BANDS.keys())
+    n_bands = len(bands)
+
+    fig, axes = plt.subplots(1, n_bands, figsize=(4.5 * n_bands, 4))
+    if n_bands == 1:
+        axes = [axes]
+
+    fig.suptitle(
+        f"Cluster T-mass Topomap: {contrast_title}\n"
+        f"(sum of |T| within significant clusters per channel)",
+        fontsize=11, fontweight="bold",
+    )
+
+    for ax, band_name in zip(axes, bands):
+        key = (contrast_label, band_name)
         if key not in results:
+            ax.axis("off")
             continue
-        res     = results[key]
-        sig_cls = sum(p < 0.05 for p in res["p_vals"])
-        p_fdr   = res.get("p_fdr", float("nan"))
-        print(
-            f"{cond_label:<18} {band_name:<7} {res['n_f']:>3} {res['n_nf']:>3}  "
-            f"{res['t_scalar']:>+7.3f}  "
-            f"{res['p_scalar']:>7.4f}  "
-            f"{p_fdr:>7.4f}  "
-            f"{res['cohens_d']:>+9.3f}  "
-            f"{sig_cls:>14}"
+        r = results[key]
+
+        # Channel t-mass: sum of |T_obs| at time points belonging to any
+        # significant cluster for each channel
+        t_mass = np.zeros(len(ch_names))
+        if r["sig_mask"].any():
+            for ci in range(len(ch_names)):
+                ch_sig = r["sig_mask"][:, ci]
+                t_mass[ci] = np.abs(r["T_obs"][ch_sig, ci]).sum()
+
+        mne.viz.plot_topomap(
+            t_mass,
+            info_ref,
+            axes=ax,
+            show=False,
+            cmap="Reds",
+            vlim=(0, t_mass.max() if t_mass.max() > 0 else 1),
         )
+        fmin, fmax = r["fmin"], r["fmax"]
+        ax.set_title(
+            f"{band_name.capitalize()} ({fmin}–{fmax} Hz)\n"
+            f"N = {r['n_subjects']}",
+            fontsize=10,
+        )
+
+    plt.tight_layout()
+    fname = os.path.join(OUTPUT_DIR, f"cluster_perm_topomap_{contrast_label}.png")
+    fig.savefig(fname, dpi=300, bbox_inches="tight")
+    print(f"Saved: {fname}")
+    plt.close(fig)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Run plotting for every contrast
+# ─────────────────────────────────────────────────────────────────────────────
+for contrast_label, cond_a, cond_b, contrast_title in CONTRASTS:
+    if (contrast_label, "alpha") not in results:
+        continue
+    plot_per_channel(contrast_label, cond_a, cond_b, contrast_title)
+    plot_topomap(contrast_label, cond_a, cond_b, contrast_title)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 6 — Results table
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n" + "=" * 70)
+print("SPATIO-TEMPORAL CLUSTER PERMUTATION TEST — RESULTS SUMMARY")
+print("=" * 70)
+for (contrast_label, band_name), r in results.items():
+    print(f"\n{r['contrast_title']}  |  {band_name.capitalize()} "
+          f"({r['fmin']}–{r['fmax']} Hz)  |  N = {r['n_subjects']}")
+    print(f"  Cond A: {COND_LABELS.get(r['cond_a'], r['cond_a'])}")
+    print(f"  Cond B: {COND_LABELS.get(r['cond_b'], r['cond_b'])}")
+    if r["sig_clusters"]:
+        for i, (c, p) in enumerate(r["sig_clusters"]):
+            t_idx, ch_idx = np.where(c)
+            t_span = times_plot[t_idx]
+            chans  = [ch_names[j] for j in np.unique(ch_idx)]
+            print(f"  ✓ Cluster {i+1}: {t_span.min():.3f}–{t_span.max():.3f} s  "
+                  f"| channels: {chans}  | p = {p:.4f}")
+    else:
+        print(f"  ✗ No significant clusters (p < {P_ACCEPT})")
+
+print("\nDone.")
