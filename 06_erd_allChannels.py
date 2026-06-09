@@ -101,6 +101,13 @@ def band_erd(tfr, fmin, fmax):
     f_mask = (tfr.freqs >= fmin) & (tfr.freqs <= fmax)
     return tfr.data[:, f_mask, :].mean(axis=(0, 1))  
 
+# def band_erd(tfr, fmin, fmax, roi_channels=None):
+#     f_mask = (tfr.freqs >= fmin) & (tfr.freqs <= fmax)
+#     if roi_channels:
+#         ch_mask = [i for i, ch in enumerate(tfr.ch_names) if ch in roi_channels]
+#         return tfr.data[ch_mask][:, f_mask, :].mean(axis=(0, 1))
+#     return tfr.data[:, f_mask, :].mean(axis=(0, 1))
+
 def group_mean_sem(tfr_list, fmin, fmax):
     subject_erds = np.array([band_erd(tfr, fmin, fmax) for tfr in tfr_list])
     mean = subject_erds.mean(axis=0)
