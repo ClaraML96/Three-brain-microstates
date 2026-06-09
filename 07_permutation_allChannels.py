@@ -398,9 +398,9 @@ for (contrast_label, band_name), r in results.items():
             t_idx, ch_idx = np.where(c)
             t_span = times_plot[t_idx]
             chans  = [ch_names[j] for j in np.unique(ch_idx)]
-            print(f"  ✓ Cluster {i+1}: {t_span.min():.3f}–{t_span.max():.3f} s  "
+            print(f" Cluster {i+1}: {t_span.min():.3f}–{t_span.max():.3f} s  "
                   f"| channels: {chans}  | p = {p:.4f}")
     else:
-        print(f"  ✗ No significant clusters (p < {P_ACCEPT})")
+        print(f" No significant clusters (p < {P_ACCEPT})")
 
 print("\nDone.")
