@@ -61,7 +61,7 @@ COLORS = {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 1 — Load epochs, compute TFR (identical to 07_permutation.py)
+# STEP 1 — Load epochs, compute TFR 
 # ─────────────────────────────────────────────────────────────────────────────
 print(f"Found {len(EPOCH_FILES)} epoch files\n")
 
@@ -98,14 +98,14 @@ for epoch_file in EPOCH_FILES:
         group_tfr.setdefault(condition, []).append(tfr_avg)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 2 — Build adjacency (identical to 07_permutation.py)
+# STEP 2 — Build adjacency 
 # ─────────────────────────────────────────────────────────────────────────────
 adjacency, _ = mne.channels.find_ch_adjacency(info_ref, ch_type="eeg")
 ch_names = info_ref.ch_names
 print(f"\nChannel adjacency built for: {ch_names}")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# HELPERS (identical to 07_permutation.py)
+# HELPERS 
 # ─────────────────────────────────────────────────────────────────────────────
 def band_spatiotemporal(tfr, fmin, fmax, t_mask):
     f_mask = (tfr.freqs >= fmin) & (tfr.freqs <= fmax)
@@ -224,8 +224,7 @@ for contrast_label, cond_a, cond_b, contrast_title in CONTRASTS:
 # STEP 4 — Violin plot: 4 contrasts × 2 bands in one figure (2 × 4 grid)
 # ─────────────────────────────────────────────────────────────────────────────
 def half_violin(ax, data, pos, side, color, width=0.35):
-    """Draw a half-violin on one side of `pos`.
-
+    """
     Parameters
     ----------
     ax    : matplotlib Axes
