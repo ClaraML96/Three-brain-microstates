@@ -152,7 +152,7 @@ handles, labels = axes[0].get_legend_handles_labels()
 fig.legend(handles, labels, loc="upper right", fontsize=8, framealpha=0.8,
            bbox_to_anchor=(1.18, 1.0))
 
-fig.suptitle("Li's ERD/ERS for all participants", fontsize=14, fontweight="bold")
+fig.suptitle("ERD/ERS for all participants", fontsize=14, fontweight="bold")
 plt.tight_layout()
 
 output_file = os.path.join(output_dir, "erd_ers_Li_allparticipants.png")
