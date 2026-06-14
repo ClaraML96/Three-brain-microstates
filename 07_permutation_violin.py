@@ -288,41 +288,48 @@ def significance_bracket(ax, x1, x2, y, p_val):
 
 
 def plot_violin_summary():
-    bands   = list(FREQ_BANDS.keys())
-    n_bands = len(bands)
-    n_cont  = len(CONTRASTS)
+    bands = list(FREQ_BANDS.keys())  # ['alpha', 'beta']
+    
+    # Global font scaling to make things look cleaner with bigger text
+    TITLE_FONT = 13
+    LABEL_FONT = 11
+    TICK_FONT = 10
+    SUB_FONT = 9
 
-    fig, axes = plt.subplots(
-        n_bands, n_cont,
-        figsize=(4.2 * n_cont, 4.5 * n_bands),
-        sharey=False,
-    )
-    # Ensure 2-D indexing even with 1 row/col
-    if n_bands == 1:
-        axes = axes[np.newaxis, :]
-    if n_cont == 1:
-        axes = axes[:, np.newaxis]
+    # Loop through each contrast to save them as 4 separate files
+    for contrast_label, cond_a, cond_b, contrast_title in CONTRASTS:
+        
+        # Check if we actually have data for this contrast
+        has_data = any((contrast_label, band_name) in results for band_name in bands)
+        if not has_data:
+            print(f"Skipping plot for {contrast_label}: No data collected.")
+            continue
 
-    fig.suptitle(
-        "ERD per Subject — Cluster-masked Mean\n"
-        "(split violin: left = cond A, right = cond B)",
-        fontsize=13, fontweight="bold", y=1.01,
-    )
+        # Create a figure with 1 row and 2 columns (Alpha and Beta side-by-side)
+        fig, axes = plt.subplots(
+            1, 2, 
+            figsize=(10, 5.5), 
+            sharey=False
+        )
 
-    for row, band_name in enumerate(bands):
-        for col, (contrast_label, cond_a, cond_b, contrast_title) in enumerate(CONTRASTS):
-            ax  = axes[row, col]
+        fig.suptitle(
+            f"{contrast_title}\nERD per Subject — Cluster-masked Mean",
+            fontsize=TITLE_FONT + 1, fontweight="bold", y=1.02,
+        )
+
+        for col, band_name in enumerate(bands):
+            ax = axes[col]
             key = (contrast_label, band_name)
 
             if key not in results:
                 ax.axis("off")
                 continue
 
-            r       = results[key]
-            subj_a  = r["subj_a"]
-            subj_b  = r["subj_b"]
-            fmin    = r["fmin"]
-            fmax    = r["fmax"]
+            r = results[key]
+            subj_a = r["subj_a"]
+            subj_b = r["subj_b"]
+            fmin = r["fmin"]
+            fmax = r["fmax"]
 
             # ── Draw split violins centred at x = 0 ──────────────────────────
             half_violin(ax, subj_a, pos=0, side="left",  color=COLORS["a"])
@@ -332,13 +339,18 @@ def plot_violin_summary():
             ax.axhline(0, color="0.6", lw=0.7, ls="--", zorder=1)
 
             # ── Significance bracket (cluster permutation p) ──────────────────
-            # Use the smallest cluster p if multiple sig clusters exist
             if r["sig_clusters"]:
                 best_p = min(p for _, p in r["sig_clusters"])
-                ymax   = max(subj_a.max(), subj_b.max())
-                y_br   = ymax + abs(ymax) * 0.08 + 1
+                ymax = max(subj_a.max(), subj_b.max())
+                y_br = ymax + abs(ymax) * 0.08 + 1
                 ax.set_ylim(top=y_br + abs(y_br) * 0.25)
-                significance_bracket(ax, -0.25, 0.25, y_br, best_p)
+                
+                # Make bracket text scale with our larger fonts
+                h = (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.03
+                ax.plot([-0.25, -0.25, 0.25, 0.25], [y_br, y_br + h, y_br + h, y_br], lw=0.8, color="0.35")
+                label = "***" if best_p < 0.001 else "**" if best_p < 0.01 else "*" if best_p < 0.05 else "n.s."
+                ax.text(0, y_br + h * 1.2, label, ha="center", va="bottom", fontsize=LABEL_FONT, color="0.35")
+                
                 ptext = f"p = {best_p:.3f} (cluster perm.)"
             else:
                 ptext = "n.s. (cluster perm.)"
@@ -347,59 +359,54 @@ def plot_violin_summary():
             ax.text(0.97, 0.04,
                     f"d = {r['cohens_d']:.2f}",
                     transform=ax.transAxes,
-                    ha="right", va="bottom", fontsize=8, color="0.4",
+                    ha="right", va="bottom", fontsize=TICK_FONT, color="0.4",
                     style="italic")
 
-            # ── Labels / formatting ───────────────────────────────────────────
+            # ── Labels / Formatting (Bigger Fonts applied here) ───────────────
             ax.set_xlim(-0.55, 0.55)
             ax.set_xticks([-0.17, 0.17])
             ax.set_xticklabels(
                 [COND_LABELS.get(cond_a, cond_a),
                  COND_LABELS.get(cond_b, cond_b)],
-                fontsize=8,
+                fontsize=TICK_FONT,
+                fontweight="bold"
             )
             ax.tick_params(axis="x", length=0)
-            ax.set_ylabel("Mean ERD (%)", fontsize=8)
-            ax.yaxis.set_tick_params(labelsize=8)
+            ax.set_ylabel("Mean ERD (%)", fontsize=LABEL_FONT)
+            ax.yaxis.set_tick_params(labelsize=TICK_FONT)
             ax.spines[["top", "right", "bottom"]].set_visible(False)
 
-            if row == 0:
-                ax.set_title(
-                    f"{contrast_title}\n"
-                    f"{band_name.capitalize()} ({fmin}–{fmax} Hz)\n"
-                    f"N = {r['n_subjects']}",
-                    fontsize=9, fontweight="bold",
-                )
-            else:
-                ax.set_title(
-                    f"{band_name.capitalize()} ({fmin}–{fmax} Hz)",
-                    fontsize=9,
-                )
+            # Title per subplot (Band identity)
+            ax.set_title(
+                f"{band_name.capitalize()} ({fmin}–{fmax} Hz)\nN = {r['n_subjects']}",
+                fontsize=LABEL_FONT, fontweight="bold", pad=10
+            )
 
             # Subtitle with cluster label + p-text
             ax.set_xlabel(
                 f"{r['cluster_label']}\n{ptext}",
-                fontsize=7, color="0.5",
+                fontsize=SUB_FONT, color="0.5", labelpad=8
             )
 
-    # ── Shared legend ─────────────────────────────────────────────────────────
-    legend_handles = [
-        mpatches.Patch(facecolor=COLORS["a"], alpha=0.65, label="Condition A"),
-        mpatches.Patch(facecolor=COLORS["b"], alpha=0.65, label="Condition B"),
-    ]
-    fig.legend(
-        handles=legend_handles,
-        loc="lower center", ncol=2,
-        fontsize=9, framealpha=0.8,
-        bbox_to_anchor=(0.5, -0.02),
-    )
+        # ── Shared Legend per Contrast Image ──────────────────────────────────
+        legend_handles = [
+            mpatches.Patch(facecolor=COLORS["a"], alpha=0.65, label=COND_LABELS.get(cond_a, "Cond A")),
+            mpatches.Patch(facecolor=COLORS["b"], alpha=0.65, label=COND_LABELS.get(cond_b, "Cond B")),
+        ]
+        fig.legend(
+            handles=legend_handles,
+            loc="lower center", ncol=2,
+            fontsize=TICK_FONT, framealpha=0.8,
+            bbox_to_anchor=(0.5, -0.06),
+        )
 
-    plt.tight_layout()
-    fname = os.path.join(OUTPUT_DIR, "violin_erd_summary.png")
-    fig.savefig(fname, dpi=300, bbox_inches="tight")
-    print(f"\nSaved: {fname}")
-    plt.close(fig)
-
+        plt.tight_layout()
+        
+        # Save each contrast configuration uniquely
+        fname = os.path.join(OUTPUT_DIR, f"violin_erd_{contrast_label}.png")
+        fig.savefig(fname, dpi=300, bbox_inches="tight")
+        print(f"Saved separate plot: {fname}")
+        plt.close(fig)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 5 — Results table (cluster-masked effect sizes)
