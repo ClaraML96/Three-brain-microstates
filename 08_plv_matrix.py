@@ -128,7 +128,7 @@ EXCLUDE_TRIADS = [330]        # metadata bug, masked not fixed (08_plv-review §
 TIME_CHUNK = 500
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 1 — Pair labels from metadata   (reused from v4, extended with statuses)
+# STEP 1 — Pair labels from metadata   
 # ═════════════════════════════════════════════════════════════════════════════
 print("Loading overview dataframe …")
 fg_df = pd.read_pickle(OVERVIEW_PKL)
@@ -161,7 +161,7 @@ print("Pair label distribution (before triad-level aggregation):")
 print(pair_df["pair_label"].value_counts().to_string(), "\n")
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 2 — Load epochs   (reused from v4)
+# STEP 2 — Load epochs  
 # ═════════════════════════════════════════════════════════════════════════════
 print(f"Found {len(EPOCH_FILES)} epoch files")
 
@@ -199,7 +199,7 @@ ch_names   = info_ref["ch_names"]
 n_channels = len(ch_names)
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 3 — Phase extraction with caching + selection alignment   (reused from v4)
+# STEP 3 — Phase extraction with caching + selection alignment  
 # ═════════════════════════════════════════════════════════════════════════════
 _phase_cache: dict[tuple[int, str], np.ndarray] = {}
 
@@ -212,7 +212,7 @@ def get_phase(subj_id: int, band: str) -> np.ndarray:
     fmin, fmax = FREQ_BANDS[band]
     data_full = subject_epochs[subj_id].get_data()
     b, a = butter(FILTER_ORDER, [fmin, fmax], btype="bandpass", fs=sfreq, output="ba")
-    analytic = hilbert(filtfilt(b, a, data_full, axis=-1), axis=-1)
+    analytic = hilbert(filtfilt(b, a, data_full, axis=-1), axis=-1) # Running Hilbert transformation
     phase = np.angle(analytic[:, :, t_mask])
     _phase_cache[key] = phase
     return phase
@@ -229,14 +229,7 @@ def align_by_selection(subj_a: int, subj_b: int):
     return np.searchsorted(sel_a, common), np.searchsorted(sel_b, common), common
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 4 — FULL cross-brain PLV matrix   (the v2 change)
-#
-# PLV[i,k] = mean_t | mean_trials exp(i (phi_A[i,t] - phi_B[k,t])) |
-# for every electrode i on head A and k on head B. Across-trial PLV (matches
-# v4's baseline finding: the random-phase floor is √(π/4·n_trials)).
-#
-# Implemented as a batched complex matmul over time (BLAS-fast), chunked over
-# time to bound memory. cross_t[i,k] = (1/Ntr) Σ_tr zA[tr,i,t] · conj(zB[tr,k,t]).
+# STEP 4 — FULL cross-brain PLV matrix   
 # ═════════════════════════════════════════════════════════════════════════════
 def matrix_plv(phase_a: np.ndarray, phase_b: np.ndarray) -> np.ndarray:
     """phase_a, phase_b : (n_trials, n_channels, n_times) — already aligned.
@@ -254,11 +247,6 @@ def matrix_plv(phase_a: np.ndarray, phase_b: np.ndarray) -> np.ndarray:
 
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 5 — Per-triad friend / averaged-non-friend matrices, per band
-#
-# Orientation convention: non-friend pairs are oriented friend=rows,
-# non-friend=cols (so averaging the two non-friend pairs is coherent — both
-# share the non-friend C on the column axis). M(Y,X) = M(X,Y).T, so we transpose
-# when the tuple has the non-friend in slot A.
 # ═════════════════════════════════════════════════════════════════════════════
 print("Computing full cross-brain PLV matrices per pair …\n")
 
@@ -339,16 +327,7 @@ def build_pair_adjacency(A_chan: sparse.csr_matrix) -> sparse.csr_matrix:
 
 A_chan   = build_single_head_adjacency(info_ref)
 pair_adj = build_pair_adjacency(A_chan)
-# Joint (band × pair) adjacency — BLOCK-DIAGONAL across bands.
-# alpha (8–12) and beta (13–30) are categorical, non-contiguous bands, NOT a
-# continuous frequency axis: clusters must NOT be allowed to merge across them
-# (an earlier version used combine_adjacency(n_bands, …), which chains the bands
-# and lets an alpha blob fuse to the same pair in beta). Block-diagonal keeps
-# clusters strictly within-band, while the max-statistic permutation STILL
-# corrects FWER jointly across both bands — under H0 the running max is taken
-# over every cluster in both blocks per permutation. Node order is band-major
-# (band*n_pairs + pair), matching the (n_bands, n_pairs) layout that
-# permutation_cluster_1samp_test flattens its test axes into.
+
 adjacency = sparse.block_diag([pair_adj] * len(FREQ_BANDS), format="csr")
 print(f"Adjacency built: {n_channels} ch → {pair_adj.shape[0]} pairs/band, "
       f"{adjacency.shape[0]} band×pair nodes "
