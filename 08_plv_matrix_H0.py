@@ -128,7 +128,7 @@ EXCLUDE_TRIADS = [330]        # metadata bug, masked not fixed (08_plv-review §
 TIME_CHUNK = 500
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 1 — Pair labels from metadata   (reused from v4, extended with statuses)
+# STEP 1 — Pair labels from metadata   
 # ═════════════════════════════════════════════════════════════════════════════
 print("Loading overview dataframe …")
 fg_df = pd.read_pickle(OVERVIEW_PKL)
@@ -161,7 +161,7 @@ print("Pair label distribution (before triad-level aggregation):")
 print(pair_df["pair_label"].value_counts().to_string(), "\n")
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 2 — Load epochs   (reused from v4)
+# STEP 2 — Load epochs  
 # ═════════════════════════════════════════════════════════════════════════════
 print(f"Found {len(EPOCH_FILES)} epoch files")
 
@@ -199,7 +199,7 @@ ch_names   = info_ref["ch_names"]
 n_channels = len(ch_names)
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 3 — Phase extraction with caching + selection alignment   (reused from v4)
+# STEP 3 — Phase extraction with caching + selection alignment  
 # ═════════════════════════════════════════════════════════════════════════════
 _phase_cache: dict[tuple[int, str], np.ndarray] = {}
 
@@ -229,11 +229,11 @@ def align_by_selection(subj_a: int, subj_b: int):
     return np.searchsorted(sel_a, common), np.searchsorted(sel_b, common), common
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 4 — FULL cross-brain PLV matrix   (the matrix-line change)
+# STEP 4 — FULL cross-brain PLV matrix  
 #
 # PLV[i,k] = mean_t | mean_trials exp(i (phi_A[i,t] - phi_B[k,t])) |
-# for every electrode i on head A and k on head B. Across-trial PLV (matches
-# v4's baseline finding: the random-phase floor is √(π/4·n_trials)).
+# for every electrode i on head A and k on head B. Across-trial PLV 
+# the random-phase floor is √(π/4·n_trials)).
 #
 # Implemented as a batched complex matmul over time (BLAS-fast), chunked over
 # time to bound memory. cross_t[i,k] = (1/Ntr) Σ_tr zA[tr,i,t] · conj(zB[tr,k,t]).
@@ -530,7 +530,7 @@ plot_participation()
 plot_null_histogram()
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 9 — Verification (plv-proposal-matrix §6). Cheap self-checks; print PASS/FAIL.
+# STEP 9 — Verification Cheap self-checks; print PASS/FAIL.
 # ═════════════════════════════════════════════════════════════════════════════
 print("\n" + "=" * 70 + "\nVERIFICATION\n" + "=" * 70)
 

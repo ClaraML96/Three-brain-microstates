@@ -102,7 +102,7 @@ N_MIN          = 30
 EXCLUDE_TRIADS = [330]
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 1 — Pair labels from metadata   (verbatim from plv_matrix_pipeline.py)
+# STEP 1 — Pair labels from metadata   
 # ═════════════════════════════════════════════════════════════════════════════
 print("Loading overview dataframe …")
 fg_df = pd.read_pickle(OVERVIEW_PKL)
@@ -133,7 +133,7 @@ print("Pair label distribution:")
 print(pair_df["pair_label"].value_counts().to_string(), "\n")
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 2 — Load epochs   (verbatim)
+# STEP 2 — Load epochs   
 # ═════════════════════════════════════════════════════════════════════════════
 print(f"Found {len(EPOCH_FILES)} epoch files")
 subject_epochs: dict[int, mne.Epochs] = {}
@@ -171,7 +171,7 @@ n_channels = len(ch_names)
 band_order = list(HYPYP_BANDS)
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 3 — Trial alignment   (verbatim)
+# STEP 3 — Trial alignment   
 # ═════════════════════════════════════════════════════════════════════════════
 def align_by_selection(subj_a: int, subj_b: int):
     sel_a = subject_epochs[subj_a].selection
@@ -182,7 +182,7 @@ def align_by_selection(subj_a: int, subj_b: int):
     return np.searchsorted(sel_a, common), np.searchsorted(sel_b, common), common
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 4 — HyPyP over-time PLV matrices   (THE measure swap)
+# STEP 4 — HyPyP PLV matrices   
 #
 # Filter the FULL epoch then crop the analytic signal to the push window (matches
 # the primary's "filter full, then crop" — avoids window-edge artefacts), then
@@ -199,7 +199,7 @@ def hypyp_pair_matrices(data_a: np.ndarray, data_b: np.ndarray) -> dict:
             for fi, band in enumerate(band_order)}
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 5 — Per-triad friend / averaged-non-friend matrices   (same as primary)
+# STEP 5 — Per-triad friend / averaged-non-friend matrices   
 # ═════════════════════════════════════════════════════════════════════════════
 print("Computing HyPyP over-time PLV matrices per pair …\n")
 mats: dict[str, dict[int, dict[str, list]]] = {b: {} for b in FREQ_BANDS}
@@ -248,7 +248,7 @@ for band in FREQ_BANDS:
     np.save(os.path.join(OUTPUT_DIR, f"plv_overtime_diff_{band}.npy"), D)
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 6 — Adjacency = A⊗A, block-diagonal across bands   (verbatim)
+# STEP 6 — Adjacency = A⊗A, block-diagonal across bands   
 # ═════════════════════════════════════════════════════════════════════════════
 def build_single_head_adjacency(info) -> sparse.csr_matrix:
     A, names = mne.channels.find_ch_adjacency(info, ch_type="eeg")
@@ -268,7 +268,7 @@ print(f"Adjacency: {n_channels} ch → {pair_adj.shape[0]} pairs/band, "
       f"{adjacency.shape[0]} band×pair nodes ({len(FREQ_BANDS)} disjoint blocks).\n")
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 7 — Cluster test: OUR paired sign-flip (NOT HyPyP statscluster)   (verbatim)
+# STEP 7 — Cluster test: OUR paired sign-flip (NOT HyPyP statscluster)  
 # ═════════════════════════════════════════════════════════════════════════════
 X = np.stack([diff_by_band[b].reshape(len(triad_ids), -1) for b in band_order], axis=1)
 print(f"Cluster test input X: {X.shape}  (n_triads, n_bands, n_pairs)")
@@ -317,7 +317,7 @@ pd.DataFrame(cluster_rows).to_csv(
 print(f"\nCluster table → {os.path.join(OUTPUT_DIR, 'plv_overtime_cluster_results.csv')}")
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 8 — Figures (t-map + participation), same as primary
+# STEP 8 — Figures (t-map + participation)
 # ═════════════════════════════════════════════════════════════════════════════
 def significant_mask(band_idx: int) -> np.ndarray:
     m = np.zeros(n_pairs, bool)

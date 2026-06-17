@@ -335,11 +335,6 @@ print(f"Adjacency built: {n_channels} ch → {pair_adj.shape[0]} pairs/band, "
 
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 7 — Cluster-based permutation test (paired sign-flip across triads)
-#
-# X[obs, band, pair] = per-triad (friend − non-friend) difference. The
-# one-sample t across triads tests H0: mean difference = 0 — i.e. the paired
-# friend-vs-non-friend contrast — and the sign-flip permutation is exactly
-# Maris & Oostenveld's within-subjects scheme.
 # ═════════════════════════════════════════════════════════════════════════════
 band_order = list(FREQ_BANDS)
 X = np.stack([diff_by_band[b].reshape(len(triad_ids), -1) for b in band_order], axis=1)
@@ -456,7 +451,7 @@ plot_tmaps()
 plot_participation()
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 9 — Verification (plv-proposal-v2 §6). Cheap self-checks; print PASS/FAIL.
+# STEP 9 — Verification print PASS/FAIL.
 # ═════════════════════════════════════════════════════════════════════════════
 print("\n" + "=" * 70 + "\nVERIFICATION\n" + "=" * 70)
 
