@@ -1,6 +1,6 @@
 import os
 import glob
-import gc  # Garbage collector to reclaim leaked memory
+import gc
 import numpy as np
 import mne
 import matplotlib
@@ -36,6 +36,11 @@ duo_merge = {
     "Duo — No Feedback":   ["T12Pn", "T13Pn", "T23Pn"],
 }
 
+# ------------------------------------------------------------
+# CHANNELS OF INTEREST
+# ------------------------------------------------------------
+channels_of_interest = ["C3", "O1", "O2", "Oz"]
+
 foi      = np.linspace(1, 30, 30, dtype=int)
 n_cycles = 3 + 0.5 * foi
 baseline = (-0.25, 0)
@@ -58,7 +63,7 @@ def save_joint_plot(tfr_list, label, out_dir):
     if not tfr_list:
         print(f"  Skipping plot for {label}: No data collected.")
         return
-        
+
     grand_avg = mne.grand_average(tfr_list)
     grand_avg_crop = grand_avg.copy().crop(tmin=0.0, tmax=4.0)
 
@@ -73,7 +78,7 @@ def save_joint_plot(tfr_list, label, out_dir):
         show=False,
     )
 
-    fname = label.replace(" ", "_").replace("/", "-").replace("—", "-") + "_joint_allData.png"
+    fname = label.replace(" ", "_").replace("/", "-").replace("—", "-") + "_joint_ROI.png"
     out_path = os.path.join(out_dir, fname)
     fig.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
@@ -88,9 +93,17 @@ group_tfr = {}
 for epoch_file in EPOCH_FILES:
     try:
         print(f"\nProcessing file: {os.path.basename(epoch_file)}")
-        # Preload as False initially, and only pick true EEG channels to preserve RAM
         epochs = mne.read_epochs(epoch_file, preload=True, verbose=False)
-        epochs.pick("eeg")
+
+        # Pick only the ROI channels present in this recording
+        available = [ch for ch in channels_of_interest if ch in epochs.ch_names]
+        if not available:
+            print(f"  WARNING: No ROI channels found in this file — skipping.")
+            continue
+        missing = [ch for ch in channels_of_interest if ch not in epochs.ch_names]
+        if missing:
+            print(f"  Note: channels not found in this file (skipped): {missing}")
+        epochs.pick(available)
 
         for condition in epochs.event_id:
             if condition not in condition_labels:
@@ -110,17 +123,14 @@ for epoch_file in EPOCH_FILES:
 
             tfr_avg = tfr.average()
             tfr_avg.apply_baseline(baseline, mode="percent", verbose=False)
-            tfr_avg.data *= 100      # express as % change
-            
-            # MEMORY OPTIMIZATION: Downcast float64 arrays to float32 (saves 50% RAM)
+            tfr_avg.data *= 100
             tfr_avg.data = tfr_avg.data.astype(np.float32)
 
             group_tfr.setdefault(condition, []).append(tfr_avg)
-            
-        # Clean up temporary file variables explicitly
+
         del epochs
         gc.collect()
-            
+
     except Exception as e:
         print(f"  Skipping {os.path.basename(epoch_file)} due to error: {e}")
         continue
