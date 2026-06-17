@@ -30,27 +30,31 @@ condition_remap = {
 }
 
 condition_labels = {
-    "T1P":             "Solo — With Feedback",
-    "T1Pn":            "Solo — No Feedback",
-    "T3P":             "Trio — With Feedback",
-    "T3Pn":            "Trio — No Feedback",
+    "T1P":               "Solo — With Feedback",
+    "T1Pn":              "Solo — No Feedback",
+    "T3P":               "Trio — With Feedback",
+    "T3Pn":              "Trio — No Feedback",
     "Duo_With_Feedback": "Duo — With Feedback",
     "Duo_No_Feedback":   "Duo — No Feedback",
 }
 
 condition_colors = {
-    "T1P":             "firebrick",
-    "T1Pn":            "steelblue",
-    "T3P":             "darkred",
-    "T3Pn":            "seagreen",
+    "T1P":               "firebrick",
+    "T1Pn":              "steelblue",
+    "T3P":               "darkred",
+    "T3Pn":              "seagreen",
     "Duo_With_Feedback": "darkorange",
     "Duo_No_Feedback":   "cornflowerblue",
 }
 
+# ------------------------------------------------------------
+# CHANNELS OF INTEREST
+# ------------------------------------------------------------
+channels_of_interest = ["C3", "O1", "O2", "Oz"]
+
 # Morlet parameters
 foi = np.linspace(1, 30, 30, dtype=int)
 n_cycles = 3 + 0.5 * foi
-# wavelet_length = (5/np.pi)*(n_cycles*sfreq)/foi-1 
 baseline_window = (-0.25, 0)
 
 # Time window to plot
@@ -70,7 +74,13 @@ for epoch_file in EPOCH_FILES:
 
     print(f"\nProcessing file: {os.path.basename(epoch_file)}")
     epochs = mne.read_epochs(epoch_file, preload=True)
-    epochs.pick(["C3", "C4", "Cz", "O1", "O2", "Oz", "P3", "P4"])
+
+    # Pick only the channels of interest that exist in this recording
+    available = [ch for ch in channels_of_interest if ch in epochs.ch_names]
+    if not available:
+        print(f"  WARNING: No channels of interest found — skipping file.")
+        continue
+    epochs.pick(available)
 
     for condition in epochs.event_id:
         print(f"  Computing TFR for condition: {condition}")
@@ -97,21 +107,33 @@ for epoch_file in EPOCH_FILES:
 # ------------------------------------------------------------
 # HELPERS
 # ------------------------------------------------------------
-def band_erd(tfr, fmin, fmax):
+def band_erd_roi(tfr, fmin, fmax, roi_channels):
+    """
+    Average power in a frequency band over a subset of channels.
+    Channels missing from the recording are silently skipped.
+    """
+    available = [ch for ch in roi_channels if ch in tfr.ch_names]
+    if not available:
+        raise ValueError(
+            f"None of the requested channels {roi_channels} "
+            f"were found in the data. Available channels: {tfr.ch_names}"
+        )
+    ch_idx = [tfr.ch_names.index(ch) for ch in available]
     f_mask = (tfr.freqs >= fmin) & (tfr.freqs <= fmax)
-    return tfr.data[:, f_mask, :].mean(axis=(0, 1))  
+    return tfr.data[ch_idx][:, f_mask, :].mean(axis=(0, 1))
 
-def group_mean_sem(tfr_list, fmin, fmax):
-    subject_erds = np.array([band_erd(tfr, fmin, fmax) for tfr in tfr_list])
+
+def group_mean_sem_roi(tfr_list, fmin, fmax, roi_channels):
+    subject_erds = np.array(
+        [band_erd_roi(tfr, fmin, fmax, roi_channels) for tfr in tfr_list]
+    )
     mean = subject_erds.mean(axis=0)
-    sem = subject_erds.std(axis=0) / np.sqrt(len(subject_erds))
+    sem  = subject_erds.std(axis=0) / np.sqrt(len(subject_erds))
     return mean, sem
 
 # ------------------------------------------------------------
-# Get time axis and mask to 0–4s for plotting
+# Get time axis and mask to 0–4 s for plotting
 # ------------------------------------------------------------
-# smoothing_sigma = 10  # in samples, adjust to taste
-
 first_condition = list(group_tfr.keys())[0]
 times = group_tfr[first_condition][0].times
 time_mask = (times >= plot_tmin) & (times <= plot_tmax)
@@ -120,7 +142,8 @@ times_plot = times[time_mask]
 conditions = list(group_tfr.keys())
 
 # ------------------------------------------------------------
-# PLOT: one figure, one subplot per frequency band
+# PLOT: one figure, two subplots (alpha, beta)
+# All channels of interest averaged together
 # ------------------------------------------------------------
 fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=False)
 
@@ -131,10 +154,13 @@ for ax, (band_name, (fmin, fmax)) in zip(axes, freq_bands.items()):
 
         color = condition_colors.get(condition, "gray")
         label = condition_labels[condition]
-        mean, sem = group_mean_sem(group_tfr[condition], fmin, fmax)
+
+        mean, sem = group_mean_sem_roi(
+            group_tfr[condition], fmin, fmax, channels_of_interest
+        )
 
         mean_plot = mean[time_mask]
-        sem_plot = sem[time_mask]
+        sem_plot  = sem[time_mask]
 
         ax.plot(times_plot, mean_plot, lw=1.8, color=color, label=label)
         ax.fill_between(times_plot, mean_plot - sem_plot, mean_plot + sem_plot,
@@ -146,16 +172,16 @@ for ax, (band_name, (fmin, fmax)) in zip(axes, freq_bands.items()):
     ax.set_title(band_name.capitalize(), fontsize=12, fontweight="bold")
     ax.set_xlabel("Time (s)")
     if ax == axes[0]:
-        ax.set_ylabel("Power (%)")
+        ax.set_ylabel("Power change (%)")
 
-handles, labels = axes[0].get_legend_handles_labels()
-fig.legend(handles, labels, loc="upper right", fontsize=8, framealpha=0.8,
+handles, labels_leg = axes[0].get_legend_handles_labels()
+fig.legend(handles, labels_leg, loc="upper right", fontsize=8, framealpha=0.8,
            bbox_to_anchor=(1.18, 1.0))
 
-fig.suptitle("ERD/ERS for all participants", fontsize=14, fontweight="bold")
+fig.suptitle("ERD/ERS", fontsize=14, fontweight="bold")
 plt.tight_layout()
 
-output_file = os.path.join(output_dir, "erd_ers_Li_allparticipants.png")
+output_file = os.path.join(output_dir, "erd_ers_allparticipants_ROI.png")
 fig.savefig(output_file, dpi=300, bbox_inches="tight")
 print(f"Saved: {output_file}")
 plt.close(fig)
