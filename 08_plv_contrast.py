@@ -98,13 +98,12 @@ MATCH_N        = True                    # equalise trial count per pair per con
 
 # ── Data-quality filters (inherited from the matrix line) ────────────────────
 N_MIN          = 25                      # min matched trials per pair per condition
-EXCLUDE_TRIADS = [330]
 TIME_CHUNK     = 500                     # matrix_plv memory knob (perf only)
 
 rng = np.random.default_rng(RNG_SEED)
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 1 (NEW) — pairs, NOT pair-types
+# STEP 1 — pairs, NOT pair-types
 #   The overview table is used ONLY for structure: file → Subject_id, and
 #   Subject_id → Triad_id → the 3 within-triad pairs. NO friendship information
 #   enters this contrast (every pair is measured in both conditions, so there is
@@ -137,8 +136,7 @@ print(f"{len(pair_df)} within-triad pairs across "
       f"{pair_df['Triad_id'].nunique()} triads\n")
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 2′ — load epochs, KEEPING BOTH CONDITIONS SPLIT
-#   Unlike the matrix line (one condition concatenated), a pair must be aligned
+# STEP 2 — load epochs, KEEPING BOTH CONDITIONS SPLIT
 #   WITHIN each condition independently, so keep per-subject epochs split:
 #       subject_epochs[subj_id][cond] = mne.Epochs
 # ═════════════════════════════════════════════════════════════════════════════
@@ -179,7 +177,6 @@ n_channels = len(ch_names)
 
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 3 — phase extraction (cached) + selection alignment WITHIN a condition
-#   (forks the matrix line; cache key now carries the condition)
 # ═════════════════════════════════════════════════════════════════════════════
 _phase_cache: dict[tuple, np.ndarray] = {}
 
@@ -209,7 +206,7 @@ def aligned_idx(subj_a: int, subj_b: int, cond: str):
             np.searchsorted(sel_b, common), len(common))
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 4 — full cross-brain PLV matrix  (REUSED VERBATIM from the matrix line)
+# STEP 4 — full cross-brain PLV matrix
 #   PLV[i,k] = mean_t | mean_trials exp(i (phi_A[i,t] − phi_B[k,t])) |, across-
 #   trial estimator (floor = √(π/4·n_trials)). BLAS matmul, chunked over time.
 # ═════════════════════════════════════════════════════════════════════════════
@@ -226,7 +223,7 @@ def matrix_plv(phase_a: np.ndarray, phase_b: np.ndarray) -> np.ndarray:
     return acc / n_t
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 5 (NEW) — per-pair PLV in each condition on MATCHED trial counts,
+# STEP 5 — per-pair PLV in each condition on MATCHED trial counts,
 #                then per-triad difference (collapse the 3 pairs → independence)
 # ═════════════════════════════════════════════════════════════════════════════
 def subsample(idx_a, idx_b, n):
@@ -265,8 +262,6 @@ matched_counts: list[int] = []           # for the Step-9 matched-N assertion
 for _, row in pair_df.iterrows():
     tid = row["Triad_id"]
     sid_a, sid_b = row["subj_A"], row["subj_B"]
-    if tid in EXCLUDE_TRIADS:
-        continue
     if sid_a not in subject_epochs or sid_b not in subject_epochs:
         continue
     skip = False
@@ -303,7 +298,6 @@ for band in FREQ_BANDS:
 
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 6 — inter-brain a/b/c adjacency  =  A_chan ⊗ A_chan
-#          (REUSED VERBATIM from the matrix line — derivation in its docstring)
 # ═════════════════════════════════════════════════════════════════════════════
 def build_single_head_adjacency(info) -> sparse.csr_matrix:
     A, names = mne.channels.find_ch_adjacency(info, ch_type="eeg")
@@ -325,8 +319,6 @@ print(f"Adjacency: {n_channels} ch → {pair_adj.shape[0]} pairs/band, "
 
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 7 — cluster-based permutation test (paired sign-flip across triads)
-#          (REUSED VERBATIM — the test does not care whether the per-triad
-#           difference came from pair-types or conditions)
 # ═════════════════════════════════════════════════════════════════════════════
 band_order = list(FREQ_BANDS)
 X = np.stack([diff_by_band[b].reshape(len(triad_ids), -1) for b in band_order], axis=1)
@@ -378,7 +370,7 @@ print(f"\nCluster table → plv_cluster_results.csv")
 print(f"Permutation null H0 → plv_H0.npy  ({len(H0)} values)")
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 8 — figures  (REUSED from the matrix line; titles relabelled A vs B)
+# STEP 8 — figures
 # ═════════════════════════════════════════════════════════════════════════════
 def significant_mask(band_idx: int) -> np.ndarray:
     m = np.zeros(n_pairs, bool)
@@ -472,7 +464,7 @@ plot_participation()
 plot_null_histogram()
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 9 — verification (forks matrix line §6; adds the floor/matched-N checks)
+# STEP 9 — verification
 # ═════════════════════════════════════════════════════════════════════════════
 print("\n" + "=" * 70 + "\nVERIFICATION\n" + "=" * 70)
 
@@ -496,7 +488,7 @@ diag_ok = bool((pair_adj.diagonal() > 0).all())
 print(f"  (V3) pair adjacency symmetric={sym}, self-inclusive={diag_ok} … "
       f"{'PASS' if sym and diag_ok else 'FAIL'}")
 
-# (V4) trial-alignment hard-stop: disjoint selections → zero shared trials.
+# trial-alignment hard-stop: disjoint selections → zero shared trials.
 class _SelOnly:
     def __init__(self, sel): self.selection = np.asarray(sel)
 
@@ -512,9 +504,9 @@ print(f"  (V4) trial-alignment: shared={n_share} (expect 4), "
       f"disjoint={n_disjoint} (expect 0) … "
       f"{'PASS' if n_share == 4 and n_disjoint == 0 else 'FAIL'}")
 
-# (V5) matched-N: every contributing pair had EQUAL A/B trial counts after
-#      subsampling (the floor-cancellation precondition). MATCH_N forces n_A==n_B
-#      by construction; this asserts the path was actually taken.
+# matched-N: every contributing pair had EQUAL A/B trial counts after
+# subsampling (the floor-cancellation precondition). MATCH_N forces n_A==n_B
+# by construction; this asserts the path was actually taken.
 if MATCH_N:
     _ok = len(matched_counts) > 0 and all(c >= N_MIN for c in matched_counts)
     print(f"  (V5) matched-N: {len(matched_counts)} pairs, all ≥ {N_MIN} "
@@ -523,9 +515,9 @@ if MATCH_N:
 else:
     print("  (V5) matched-N: SKIPPED (MATCH_N=False — floor will NOT cancel!)")
 
-# (V6) floor self-test reminder — not run here. Set CONTRAST=(X,X) and confirm
-#      the difference map is ≈ 0 everywhere (see proposal). The one direct
-#      proof the floor is cancelled, not assumed.
+# floor self-test reminder — not run here. Set CONTRAST=(X,X) and confirm
+# the difference map is ≈ 0 everywhere (see proposal). The one direct
+# proof the floor is cancelled, not assumed.
 print("  (V6) floor self-test: run CONTRAST=(X,X) separately → diff ≈ 0 (manual).")
 
 print("\nDone.  Outputs in:", OUTPUT_DIR)

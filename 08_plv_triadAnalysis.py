@@ -11,7 +11,7 @@ OVERVIEW_PKL = (
     r"\Human Centeret Artificial Intelligence\Thesis\FG_Data_For_Students"
     r"\FG_overview_df_v2.pkl"
 )
-CONTRAST, EXCLUDE = ("T3P", "T1P"), [330]
+CONTRAST, EXCLUDE = ("T3P", "T1P"), [] #[330]
 
 fg = pd.read_pickle(OVERVIEW_PKL)
 sel = {}   # subj_id -> {cond: selection}
