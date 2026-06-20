@@ -1,43 +1,3 @@
-"""
-plv_condition_contrast.py — inter-brain PLV by task condition
-═══════════════════════════════════════════════════════════════════════════════
-Implements plv-proposal-conditions.md. Compares the full cross-brain PLV matrix
-between two force-game conditions, within the same pairs:
-
-    RQ-GS  CONTRAST = ("T3P", "T1P")     # group size: triad co-action vs solo
-    RQ-FB  CONTRAST = ("T3P", "T3Pn")    # feedback:   continuous vs none
-
-Per triad, per band: compute the 64×64 PLV matrix for each of the 3 pairs in each
-condition, difference the conditions, average the 3 pairs → one matrix per triad.
-Across triads: paired sign-flip cluster-permutation test (Dumas 2010 inter-brain
-adjacency; Maris & Oostenveld 2007), |t|>2, two-sided, FWER over pairs × bands.
-
-Shares its data layer + matrix_plv + A⊗A adjacency + cluster test with
-plv_matrix_pipeline.py (the friend/non-friend line); only the contrast differs.
-(New here: Steps 1/2′/5 — pairs not pair-types, epochs kept split by condition,
-per-pair PLV on MATCHED trial counts.)
-
-─────────────────────────────────────────────────────────────────────────────
-THE FLOOR — the one thing that must not be skipped
-─────────────────────────────────────────────────────────────────────────────
-PLV between unrelated signals is not 0; it sits on √(π/4N) (N = trials). Two
-conditions with different trial counts → different floors → a fake difference
-everywhere. Fix: subsample both conditions to the same count per pair before
-computing PLV (MATCH_N). Self-test: CONTRAST=(X,X) must give a ≈0 difference map.
-(See the proposal, "Two things that are easy to get wrong".)
-
-─────────────────────────────────────────────────────────────────────────────
-PRE-REGISTERED CHOICES
-─────────────────────────────────────────────────────────────────────────────
-  • RQ-GS primary, RQ-FB secondary — each its own family; do not pool p across them.
-  • Bands alpha-mu (8–12) + beta (13–30), corrected jointly (block-diagonal).
-  • Two-sided (CLUSTER_TAIL = 0); directional prior is A > B.
-  • Tests the contrast, not absolute level; the floor is handled by N-matching.
-  • N_MIN (min matched trials/pair) is a sensitivity knob — see proposal Status.
-
-References as plv_matrix_pipeline.py. Design: plv-proposal-conditions.md.
-"""
-
 import os
 import glob
 import itertools
@@ -50,7 +10,7 @@ import mne
 from mne.stats import permutation_cluster_1samp_test
 
 # ═════════════════════════════════════════════════════════════════════════════
-# CONFIGURATION  —  EDIT PATHS FOR YOUR MACHINE  (same paths as the matrix line)
+# CONFIGURATION
 # ═════════════════════════════════════════════════════════════════════════════
 DATA_DIR = (
     r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU"
@@ -63,15 +23,7 @@ OVERVIEW_PKL = (
     r"\FG_overview_df_v2.pkl"
 )
 
-# ── THE CONTRAST — this is what you change between runs (see header) ──────────
-# TO RUN ANOTHER CONTRAST: edit this one tuple and run. Outputs auto-tag into a
-# separate folder (plv_conditions_<A>_vs_<B>), so runs never overwrite each other.
-#   RQ-GS (group size, primary, DONE) : ("T3P", "T1P")  → null, N=15 at N_MIN=30
-#   RQ-FB (feedback,    secondary)    : ("T3P", "T3Pn") → strongest positive prior
-# For RQ-FB consider N_MIN=25 (below) to keep ~29 triads instead of ~15 — and
-# report both contrasts at the SAME N_MIN. After the run, move the output folder
-# into raw/output/ and keep the console scrollback (the funnel + VERIFICATION).
-CONTRAST       = ("T3P", "T1P")          # RQ-GS primary. RQ-FB: ("T3P", "T3Pn"), ("T3P", "T1P")
+CONTRAST       = ("T3P", "T3Pn")          # RQ-GS primary. RQ-FB: ("T3P", "T3Pn"), ("T3P", "T1P") 
 COND_A, COND_B = CONTRAST
 _tag           = f"{COND_A}_vs_{COND_B}"
 
@@ -93,22 +45,16 @@ CLUSTER_TAIL        = 0                  # two-sided
 N_PERMUTATIONS      = 5000
 RNG_SEED            = 42
 
-# ── The condition-contrast control (THE load-bearing flag — see header) ──────
 MATCH_N        = True                    # equalise trial count per pair per cond
 
-# ── Data-quality filters (inherited from the matrix line) ────────────────────
 N_MIN          = 25                      # min matched trials per pair per condition
+EXCLUDE_TRIADS = [] #[330]
 TIME_CHUNK     = 500                     # matrix_plv memory knob (perf only)
 
 rng = np.random.default_rng(RNG_SEED)
 
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 1 — pairs, NOT pair-types
-#   The overview table is used ONLY for structure: file → Subject_id, and
-#   Subject_id → Triad_id → the 3 within-triad pairs. NO friendship information
-#   enters this contrast (every pair is measured in both conditions, so there is
-#   nothing to label). A condition × friendship interaction would re-introduce
-#   Friend_status, but that is an exploratory extension only — see the proposal.
 # ═════════════════════════════════════════════════════════════════════════════
 print("Loading overview dataframe (triad/subject structure only) …")
 fg_df = pd.read_pickle(OVERVIEW_PKL)
@@ -137,8 +83,6 @@ print(f"{len(pair_df)} within-triad pairs across "
 
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 2 — load epochs, KEEPING BOTH CONDITIONS SPLIT
-#   WITHIN each condition independently, so keep per-subject epochs split:
-#       subject_epochs[subj_id][cond] = mne.Epochs
 # ═════════════════════════════════════════════════════════════════════════════
 print(f"Found {len(EPOCH_FILES)} epoch files; keeping conditions {CONTRAST} split.")
 
@@ -206,9 +150,7 @@ def aligned_idx(subj_a: int, subj_b: int, cond: str):
             np.searchsorted(sel_b, common), len(common))
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 4 — full cross-brain PLV matrix
-#   PLV[i,k] = mean_t | mean_trials exp(i (phi_A[i,t] − phi_B[k,t])) |, across-
-#   trial estimator (floor = √(π/4·n_trials)). BLAS matmul, chunked over time.
+# STEP 4 — full cross-brain PLV matrix  
 # ═════════════════════════════════════════════════════════════════════════════
 def matrix_plv(phase_a: np.ndarray, phase_b: np.ndarray) -> np.ndarray:
     assert phase_a.shape == phase_b.shape, "Phase arrays must be aligned."
@@ -224,7 +166,6 @@ def matrix_plv(phase_a: np.ndarray, phase_b: np.ndarray) -> np.ndarray:
 
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 5 — per-pair PLV in each condition on MATCHED trial counts,
-#                then per-triad difference (collapse the 3 pairs → independence)
 # ═════════════════════════════════════════════════════════════════════════════
 def subsample(idx_a, idx_b, n):
     """Randomly keep n of the aligned trials (counts-matching for the floor)."""
@@ -255,13 +196,18 @@ def pair_contrast(subj_a, subj_b, band):
 
 print(f"Computing per-pair PLV in {COND_A} & {COND_B} (MATCH_N={MATCH_N}) …\n")
 
-# band -> triad_id -> list of per-pair (M_A − M_B) difference matrices
+# band -> triad_id -> list of per-pair matrices. Diff feeds the test; the two
+# absolute accumulators (NEW in v2) feed the descriptive absolute-level maps.
 pair_diffs: dict[str, dict[int, list]] = {b: {} for b in FREQ_BANDS}
+pair_A:     dict[str, dict[int, list]] = {b: {} for b in FREQ_BANDS}
+pair_B:     dict[str, dict[int, list]] = {b: {} for b in FREQ_BANDS}
 matched_counts: list[int] = []           # for the Step-9 matched-N assertion
 
 for _, row in pair_df.iterrows():
     tid = row["Triad_id"]
     sid_a, sid_b = row["subj_A"], row["subj_B"]
+    if tid in EXCLUDE_TRIADS:
+        continue
     if sid_a not in subject_epochs or sid_b not in subject_epochs:
         continue
     skip = False
@@ -272,6 +218,8 @@ for _, row in pair_df.iterrows():
             break
         M_A, M_B, n = res
         pair_diffs[band].setdefault(tid, []).append(M_A - M_B)
+        pair_A[band].setdefault(tid, []).append(M_A)
+        pair_B[band].setdefault(tid, []).append(M_B)
         if band == next(iter(FREQ_BANDS)):
             matched_counts.append(n)
     if skip:
@@ -288,13 +236,16 @@ triad_ids = sorted(
 )
 print(f"\n{len(triad_ids)} triads with all 3 pairs in both bands\n")
 
-# Per-triad difference = mean over the triad's 3 pair differences (independence:
-# the 3 pairs share members → collapse to one observation per triad).
-diff_by_band = {}
+
+diff_by_band, absA_by_band, absB_by_band = {}, {}, {}
 for band in FREQ_BANDS:
     D = np.stack([np.mean(pair_diffs[band][tid], axis=0) for tid in triad_ids])
-    diff_by_band[band] = D                              # (n_triads, n_ch, n_ch)
+    A = np.stack([np.mean(pair_A[band][tid],     axis=0) for tid in triad_ids])
+    B = np.stack([np.mean(pair_B[band][tid],     axis=0) for tid in triad_ids])
+    diff_by_band[band], absA_by_band[band], absB_by_band[band] = D, A, B  # (n_tri,ch,ch)
     np.save(os.path.join(OUTPUT_DIR, f"plv_diff_{band}.npy"), D)
+    np.save(os.path.join(OUTPUT_DIR, f"plv_abs_{COND_A}_{band}.npy"), A)
+    np.save(os.path.join(OUTPUT_DIR, f"plv_abs_{COND_B}_{band}.npy"), B)
 
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 6 — inter-brain a/b/c adjacency  =  A_chan ⊗ A_chan
@@ -370,7 +321,7 @@ print(f"\nCluster table → plv_cluster_results.csv")
 print(f"Permutation null H0 → plv_H0.npy  ({len(H0)} values)")
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 8 — figures
+# STEP 8 — figures 
 # ═════════════════════════════════════════════════════════════════════════════
 def significant_mask(band_idx: int) -> np.ndarray:
     m = np.zeros(n_pairs, bool)
@@ -401,6 +352,68 @@ def plot_tmaps():
                  f"N={len(triad_ids)} triads", fontweight="bold")
     plt.tight_layout()
     fn = os.path.join(OUTPUT_DIR, f"plv_tmap_{_tag}.png")
+    fig.savefig(fn, dpi=300, bbox_inches="tight"); plt.close(fig)
+    print(f"Saved: {fn}")
+
+
+def plot_diff_maps():
+    """Effect-size twin of the t-map: mean over triads of (M_A − M_B), in PLV
+    units. Same RdBu_r/symmetric grammar as plot_tmaps so the two read side by
+    side — t says 'consistent?', this says 'how big?'. No significance overlay:
+    a surviving cluster (if any) is already marked on the t-map."""
+    nb = len(FREQ_BANDS)
+    fig, axes = plt.subplots(1, nb, figsize=(6 * nb, 5.5))
+    axes = np.atleast_1d(axes)
+    mean_diff = {b: diff_by_band[b].mean(axis=0) for b in band_order}
+    vmax = max(max(abs(m).max() for m in mean_diff.values()), 1e-9)
+    for col, band in enumerate(band_order):
+        ax = axes[col]
+        im = ax.imshow(mean_diff[band], cmap="RdBu_r", vmin=-vmax, vmax=vmax,
+                       aspect="equal", origin="upper")
+        ax.set_title(f"{band} ({FREQ_BANDS[band][0]}–{FREQ_BANDS[band][1]} Hz)\n"
+                     f"mean ΔPLV ({COND_A}−{COND_B}); "
+                     f"max|Δ|={abs(mean_diff[band]).max():.3f}", fontsize=10)
+        ax.set_xlabel("head-B channel"); ax.set_ylabel("head-A channel")
+        fig.colorbar(im, ax=ax, fraction=0.046, shrink=0.8, label="ΔPLV")
+    fig.suptitle(f"Inter-brain PLV difference ({COND_A} − {COND_B}) · effect size "
+                 f"in PLV units · N={len(triad_ids)} triads", fontweight="bold")
+    plt.tight_layout()
+    fn = os.path.join(OUTPUT_DIR, f"plv_diffmap_{_tag}.png")
+    fig.savefig(fn, dpi=300, bbox_inches="tight"); plt.close(fig)
+    print(f"Saved: {fn}")
+
+
+def plot_abs_maps():
+    """Floor / sanity panel: grand-mean absolute cross-brain PLV per condition.
+    DESCRIPTIVE ONLY — no significance overlay; inference lives on the difference.
+    Each panel states its mean vs the across-trial floor √(π/4N). If the whole
+    matrix sits at the floor, inter-brain coupling is essentially absent — which
+    is itself a finding. N varies per pair (each matched to its own min ≥ N_MIN),
+    so the reported floor uses the median matched count."""
+    nb = len(FREQ_BANDS)
+    gmA = {b: absA_by_band[b].mean(axis=0) for b in band_order}
+    gmB = {b: absB_by_band[b].mean(axis=0) for b in band_order}
+    vmax = max(max(m.max() for m in gmA.values()),
+               max(m.max() for m in gmB.values()), 1e-9)
+    n_med = int(np.median(matched_counts)) if matched_counts else N_MIN
+    floor = float(np.sqrt(np.pi / (4 * n_med)))
+    fig, axes = plt.subplots(2, nb, figsize=(5 * nb, 9))
+    axes = axes.reshape(2, nb)
+    for col, band in enumerate(band_order):
+        for r, (gm, cond) in enumerate([(gmA[band], COND_A), (gmB[band], COND_B)]):
+            ax = axes[r, col]
+            im = ax.imshow(gm, cmap="magma", vmin=0, vmax=vmax,
+                           aspect="equal", origin="upper")
+            ax.set_title(f"{cond} · {band} "
+                         f"({FREQ_BANDS[band][0]}–{FREQ_BANDS[band][1]} Hz)\n"
+                         f"mean={gm.mean():.3f}  (floor≈{floor:.3f})", fontsize=9)
+            ax.set_xlabel("head-B channel"); ax.set_ylabel("head-A channel")
+            fig.colorbar(im, ax=ax, fraction=0.046, shrink=0.8, label="PLV")
+    fig.suptitle(f"Absolute inter-brain PLV per condition · floor √(π/4N) ≈ "
+                 f"{floor:.3f} at N≈{n_med} trials · descriptive, not inferential",
+                 fontweight="bold")
+    plt.tight_layout()
+    fn = os.path.join(OUTPUT_DIR, f"plv_absmap_{_tag}.png")
     fig.savefig(fn, dpi=300, bbox_inches="tight"); plt.close(fig)
     print(f"Saved: {fn}")
 
@@ -460,35 +473,33 @@ def plot_null_histogram():
 
 
 plot_tmaps()
+plot_diff_maps()
+plot_abs_maps()
 plot_participation()
 plot_null_histogram()
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 9 — verification
+# STEP 9 — verification 
 # ═════════════════════════════════════════════════════════════════════════════
 print("\n" + "=" * 70 + "\nVERIFICATION\n" + "=" * 70)
 
-# (V1) PLV(signal, itself) diagonal must be 1.0.
 _subj = next(iter(subject_epochs))
 _p = get_phase(_subj, COND_A, band_order[0])
 _self = matrix_plv(_p, _p)
 print(f"  (V1) PLV(x,x) diag mean = {np.diag(_self).mean():.6f} (expect 1.0) … "
       f"{'PASS' if np.allclose(np.diag(_self), 1.0, atol=1e-6) else 'FAIL'}")
 
-# (V2) a/b/c toy: neigh(0)={0,1} → pair (0,0) has 4 neighbours.
 toy = sparse.csr_matrix(np.array([[1, 1, 0], [1, 1, 1], [0, 1, 1]]))
 toy_pair = (sparse.kron(toy, toy, format="csr") > 0).tocsr()
 deg00 = int(toy_pair[0].toarray().sum())
 print(f"  (V2) toy a/b/c: pair(0,0) degree = {deg00} (expect 4) … "
       f"{'PASS' if deg00 == 4 else 'FAIL'}")
 
-# (V3) adjacency symmetric + self-inclusive.
 sym = (pair_adj != pair_adj.T).nnz == 0
 diag_ok = bool((pair_adj.diagonal() > 0).all())
 print(f"  (V3) pair adjacency symmetric={sym}, self-inclusive={diag_ok} … "
       f"{'PASS' if sym and diag_ok else 'FAIL'}")
 
-# trial-alignment hard-stop: disjoint selections → zero shared trials.
 class _SelOnly:
     def __init__(self, sel): self.selection = np.asarray(sel)
 
@@ -504,9 +515,7 @@ print(f"  (V4) trial-alignment: shared={n_share} (expect 4), "
       f"disjoint={n_disjoint} (expect 0) … "
       f"{'PASS' if n_share == 4 and n_disjoint == 0 else 'FAIL'}")
 
-# matched-N: every contributing pair had EQUAL A/B trial counts after
-# subsampling (the floor-cancellation precondition). MATCH_N forces n_A==n_B
-# by construction; this asserts the path was actually taken.
+
 if MATCH_N:
     _ok = len(matched_counts) > 0 and all(c >= N_MIN for c in matched_counts)
     print(f"  (V5) matched-N: {len(matched_counts)} pairs, all ≥ {N_MIN} "
@@ -515,14 +524,22 @@ if MATCH_N:
 else:
     print("  (V5) matched-N: SKIPPED (MATCH_N=False — floor will NOT cancel!)")
 
-# floor self-test reminder — not run here. Set CONTRAST=(X,X) and confirm
-# the difference map is ≈ 0 everywhere (see proposal). The one direct
-# proof the floor is cancelled, not assumed.
+
 print("  (V6) floor self-test: run CONTRAST=(X,X) separately → diff ≈ 0 (manual).")
+
+_b0   = band_order[0]
+_lhs  = diff_by_band[_b0].mean(axis=0)
+_rhs  = absA_by_band[_b0].mean(axis=0) - absB_by_band[_b0].mean(axis=0)
+_dev  = float(np.abs(_lhs - _rhs).max())
+print(f"  (V7) diff/abs consistency: max|Δ| = {_dev:.2e} (expect ~0) … "
+      f"{'PASS' if _dev < 1e-9 else 'FAIL'}")
 
 print("\nDone.  Outputs in:", OUTPUT_DIR)
 print(f"  • plv_cluster_results.csv          — any significant clusters?")
-print(f"  • plv_tmap_{_tag}.png              — 64×64 t-map per band")
+print(f"  • plv_tmap_{_tag}.png              — 64×64 t-map per band (inference)")
+print(f"  • plv_diffmap_{_tag}.png           — 64×64 mean ΔPLV per band (effect size)")
+print(f"  • plv_absmap_{_tag}.png            — abs PLV per condition vs floor (sanity)")
 print(f"  • plv_participation_{_tag}.png     — where sig pairs concentrate")
 print(f"  • plv_null_histogram_{_tag}.png    — permutation null vs observed")
 print(f"  • plv_H0.npy / plv_diff_<band>.npy — null + per-triad differences")
+print(f"  • plv_abs_<cond>_<band>.npy        — per-triad absolute PLV (both conds)")

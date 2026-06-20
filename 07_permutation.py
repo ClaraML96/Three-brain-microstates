@@ -22,8 +22,9 @@ OUTPUT_DIR = (
 )
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# Channels of interest — order here defines the channel axis throughout
-CHANNELS = ["C3", "Cz", "C4", "P3", "Pz", "P4", "O1", "Oz", "O2"]
+# ROI
+CHANNELS = ["C3", "O1", "Oz", "O2"]
+
 
 # Frequency bands
 FREQ_BANDS = {

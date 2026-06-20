@@ -25,7 +25,8 @@ OUTPUT_DIR = (
 )
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-CHANNELS = ["C3", "Cz", "C4", "P3", "Pz", "P4", "O1", "Oz", "O2"]
+# CHANNELS = ["C3", "Cz", "C4", "P3", "Pz", "P4", "O1", "Oz", "O2"]
+CHANNELS = ["C3", "O1", "Oz", "O2"]
 
 FREQ_BANDS = {
     "alpha": (8, 12),
