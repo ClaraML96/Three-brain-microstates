@@ -180,11 +180,6 @@ for fpath in EPOCH_FILES:
         continue
     subj_id = int(match["Subject_id"].iloc[0])
     epochs = mne.read_epochs(fpath, preload=True, verbose=False)
-
-    # Add this immediately after:
-    CHANNELS_OF_INTEREST = ["C3", "O1", "Oz", "O2"]
-    epochs = epochs.pick_channels(CHANNELS_OF_INTEREST, ordered=True)
-
     present = {c: epochs[c] for c in CELLS if c in epochs.event_id}
     if not present:
         print(f"  {exp_id} (subj={subj_id}): none of {CELLS} present, skipping.")
