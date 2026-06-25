@@ -125,12 +125,21 @@ def subject_id(path):
 def load_group_tfrs(channels=CHANNELS, verbose=True):
     """Per-subject baseline-corrected % ERD TFRs, keyed by condition then subject id.
 
+    Parameters
+    ----------
+    channels : list[str] | None
+        ROI channels to keep. ``None`` keeps **all EEG channels** (whole-scalp
+        variant — used by 07_permutation_wholescalp.py). The default 4-channel
+        ROI is unchanged, so the ROI-based scripts (07_permutation.py, the violin
+        companion) keep their v3 behaviour exactly.
+
     Returns
     -------
     group_tfr : dict[str, dict[str, mne.time_frequency.AverageTFR]]
         group_tfr[condition][subject_id] = AverageTFR  (% signal change)
     info_ref : mne.Info
-        ROI channels in `channels` order (from the first file read).
+        Channels in `channels` order (from the first file read); all EEG channels
+        when ``channels is None``.
     """
     files = epoch_files()
     if verbose:
@@ -147,8 +156,11 @@ def load_group_tfrs(channels=CHANNELS, verbose=True):
             print(f"Processing: {os.path.basename(f)}  (subject {sid})")
 
         epochs = mne.read_epochs(f, preload=True)
-        available = [ch for ch in channels if ch in epochs.ch_names]
-        epochs.pick(available)
+        if channels is None:
+            epochs.pick("eeg")   # whole-scalp: keep all 64 EEG channels
+        else:
+            available = [ch for ch in channels if ch in epochs.ch_names]
+            epochs.pick(available)
 
         if info_ref is None:
             info_ref = epochs.info.copy()
