@@ -305,13 +305,22 @@ for contrast_label, cond_a, cond_b, contrast_title in ec.CONTRASTS:
     plot_cluster_mean_timecourse(contrast_label, cond_a, cond_b, contrast_title)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 5b — plot_joint: A−B ERD/ERS difference waveform + topomaps at 0.5 / 2.0 s
+# STEP 5b — plot_joint: A−B ERD/ERS difference waveform + topomaps AT CLUSTER TIMES
 #           Reads the ALREADY-COMPUTED results dict — no recompute, ~free.
 #           Selected iterations only (a PRESENTATION choice, not a calc saving;
 #           the cluster test in STEP 3 still runs over all contrasts × bands):
 #             • solo_feedback    — alpha + beta
 #             • trio_feedback    — alpha + beta
 #             • solo_vs_trio_fb  — alpha only (beta was null; band-flip lives in alpha)
+#
+#           Topomap latencies are DATA-DRIVEN per contrast, not fixed: the cluster
+#           ONSET and the timepoint of PEAK cluster T-mass (Σ|T| over the cluster's
+#           channels at that time). Both are guaranteed to sit INSIDE the significant
+#           cluster, so neither map is the pre-onset near-empty frame the old fixed
+#           0.5 s snapshot produced. Cost (accepted): latencies now differ per figure,
+#           so the two topomaps are NOT at a matched clock across contrasts — each map
+#           sits on its own effect, which is the point. Falls back to [0.5, 2.0] only
+#           if a listed contrast somehow has no significant cluster.
 #
 #           NOT guarded like STEP 4/5: plot_joint always draws a topography, so an
 #           iteration is only listed here if its result is worth a spatial figure.
@@ -322,7 +331,7 @@ JOINT_SPEC = [
     ("trio_feedback",   ("alpha", "beta")),
     ("solo_vs_trio_fb", ("alpha",)),
 ]
-JOINT_TIMES = [0.5, 2.0]
+JOINT_TIMES_FALLBACK = [0.5, 2.0]   # only if a listed contrast has no sig cluster
 
 
 def _evoked_from_diff(r):
@@ -331,7 +340,7 @@ def _evoked_from_diff(r):
     r['mean_a']/['mean_b'] are (n_times, n_ch) in PERCENT over the plot window.
     EvokedArray rebuilds its time axis from sfreq, so sfreq is set from the
     (possibly decimated) TFR time spacing — using info_ref.sfreq directly would
-    misplace the 0.5 / 2.0 s topomap latencies if the TFR was decimated.
+    misplace the topomap latencies if the TFR was decimated.
     """
     diff = (r["mean_a"] - r["mean_b"]).T          # (n_ch, n_times), percent
     info = info_ref.copy()
@@ -340,19 +349,43 @@ def _evoked_from_diff(r):
     return mne.EvokedArray(diff, info, tmin=float(times_plot[0]))
 
 
+def _cluster_topomap_times(r):
+    """Two data-driven latencies (s): cluster ONSET and PEAK-T-mass time.
+
+    Both are read off the significant-cluster mask, so both land inside the
+    cluster. Returns the fixed fallback if there is no significant cluster.
+    """
+    if not r["sig_clusters"]:
+        return list(JOINT_TIMES_FALLBACK)
+    sig_t = r["sig_mask"].any(axis=1)                       # (n_times,) sig timepoints
+    # Per-timepoint cluster T-mass: Σ|T| over channels that are in-cluster *then*.
+    tmass_t = np.where(r["sig_mask"], np.abs(r["T_obs"]), 0.0).sum(axis=1)
+    onset_idx = int(np.argmax(sig_t))                       # first sig timepoint
+    peak_idx = int(np.argmax(tmass_t))                      # strongest sig timepoint
+    if peak_idx == onset_idx:                               # degenerate → use last sig
+        peak_idx = int(np.where(sig_t)[0][-1])
+    idx = sorted({onset_idx, peak_idx})
+    return [float(times_plot[i]) for i in idx]
+
+
 def plot_joint_diff(contrast_label, band_name, contrast_title):
     r = results.get((contrast_label, band_name))
     if r is None:
         print(f"[plot_joint skipped] {contrast_label}/{band_name}: not computed.")
         return
     ev = _evoked_from_diff(r)
+    times = _cluster_topomap_times(r)
     sig = ("✓ sig cluster (p=%.4f)" % min(p for _, p in r["sig_clusters"])
            if r["sig_clusters"] else "no sig cluster")
+    t_note = ("topo @ cluster onset+peak: "
+              + ", ".join(f"{t:.2f}s" for t in times)
+              if r["sig_clusters"] else
+              "topo @ fixed " + ", ".join(f"{t:.2f}s" for t in times))
     # scalings=eeg:1 keeps the % values as-is (default 1e6 would relabel as µV).
     fig = ev.plot_joint(
-        times=JOINT_TIMES,
+        times=times,
         title=(f"{contrast_title} — {band_name} ({r['fmin']}–{r['fmax']} Hz)  |  "
-               f"A−B ERD/ERS (%)  |  N={r['n_subjects']}  |  {sig}"),
+               f"A−B ERD/ERS (%)  |  N={r['n_subjects']}  |  {sig}  |  {t_note}"),
         ts_args=dict(scalings=dict(eeg=1.0),
                      units=dict(eeg="ERD/ERS (%)"),
                      ylim=dict(eeg=[-45, 45])),

@@ -39,7 +39,10 @@ duo_merge = {
 # ------------------------------------------------------------
 # CHANNELS OF INTEREST
 # ------------------------------------------------------------
-channels_of_interest = ["C3", "O1", "O2", "Oz"]
+rois = {
+    "Sensorimotor": ["C3", "C4", "Cz", "CP3", "CP4"],
+    "Occipital":    ["O1", "O2", "Oz"],
+}
 
 foi      = np.linspace(1, 30, 30, dtype=int)
 n_cycles = 3 + 0.5 * foi
@@ -88,45 +91,46 @@ def save_joint_plot(tfr_list, label, out_dir):
 # ------------------------------------------------------------
 # STEP 1 — collect one averaged TFR per participant per condition
 # ------------------------------------------------------------
-group_tfr = {}
+group_tfr = {}  # keyed by (condition, roi_name)
 
 for epoch_file in EPOCH_FILES:
     try:
         print(f"\nProcessing file: {os.path.basename(epoch_file)}")
         epochs = mne.read_epochs(epoch_file, preload=True, verbose=False)
 
-        # Pick only the ROI channels present in this recording
-        available = [ch for ch in channels_of_interest if ch in epochs.ch_names]
-        if not available:
-            print(f"  WARNING: No ROI channels found in this file — skipping.")
-            continue
-        missing = [ch for ch in channels_of_interest if ch not in epochs.ch_names]
-        if missing:
-            print(f"  Note: channels not found in this file (skipped): {missing}")
-        epochs.pick(available)
-
-        for condition in epochs.event_id:
-            if condition not in condition_labels:
+        for roi_name, roi_channels in rois.items():
+            available = [ch for ch in roi_channels if ch in epochs.ch_names]
+            if not available:
+                print(f"  WARNING: No {roi_name} channels found — skipping ROI.")
                 continue
+            missing = [ch for ch in roi_channels if ch not in epochs.ch_names]
+            if missing:
+                print(f"  Note: {roi_name} channels not found (skipped): {missing}")
 
-            print(f"  Computing TFR for condition: {condition}")
-            epochs_cond = epochs[condition]
+            epochs_roi = epochs.copy().pick(available)
 
-            tfr = epochs_cond.compute_tfr(
-                method="morlet",
-                freqs=foi,
-                n_cycles=n_cycles,
-                return_itc=False,
-                average=False,
-                verbose=False
-            )
+            for condition in epochs_roi.event_id:
+                if condition not in condition_labels:
+                    continue
 
-            tfr_avg = tfr.average()
-            tfr_avg.apply_baseline(baseline, mode="percent", verbose=False)
-            tfr_avg.data *= 100
-            tfr_avg.data = tfr_avg.data.astype(np.float32)
+                print(f"  Computing TFR for condition: {condition}, ROI: {roi_name}")
+                epochs_cond = epochs_roi[condition]
 
-            group_tfr.setdefault(condition, []).append(tfr_avg)
+                tfr = epochs_cond.compute_tfr(
+                    method="morlet",
+                    freqs=foi,
+                    n_cycles=n_cycles,
+                    return_itc=False,
+                    average=False,
+                    verbose=False
+                )
+
+                tfr_avg = tfr.average()
+                tfr_avg.apply_baseline(baseline, mode="percent", verbose=False)
+                tfr_avg.data *= 100
+                tfr_avg.data = tfr_avg.data.astype(np.float32)
+
+                group_tfr.setdefault((condition, roi_name), []).append(tfr_avg)
 
         del epochs
         gc.collect()
@@ -141,11 +145,11 @@ for epoch_file in EPOCH_FILES:
 duo_keys = {key for keys in duo_merge.values() for key in keys}
 
 print("\n--- Individual conditions ---")
-for condition, tfr_list in group_tfr.items():
+for (condition, roi_name), tfr_list in group_tfr.items():
     if condition in duo_keys:
         continue
 
-    label = condition_labels.get(condition, condition)
+    label = f"{condition_labels.get(condition, condition)} [{roi_name}]"
     print(f"\nPlotting: {label}")
     save_joint_plot(tfr_list, label, OUTPUT_DIR)
 
@@ -154,20 +158,20 @@ for condition, tfr_list in group_tfr.items():
 # ----------------------------
 print("\n--- Combined Duo conditions ---")
 for combined_label, source_conditions in duo_merge.items():
-    print(f"\nPlotting combined: {combined_label}")
+    for roi_name in rois:
+        print(f"\nPlotting combined: {combined_label} [{roi_name}]")
 
-    pooled = []
-    for cond in source_conditions:
-        if cond in group_tfr:
-            pooled.extend(group_tfr[cond])
-        else:
-            print(f"  Warning: {cond} not found in data, skipping.")
+        pooled = []
+        for cond in source_conditions:
+            key = (cond, roi_name)
+            if key in group_tfr:
+                pooled.extend(group_tfr[key])
+            else:
+                print(f"  Warning: {cond} / {roi_name} not found, skipping.")
 
-    if not pooled:
-        print(f"  No data found for {combined_label}, skipping.")
-        continue
+        if not pooled:
+            print(f"  No data found for {combined_label} [{roi_name}], skipping.")
+            continue
 
-    print(f"  Pooling {len(pooled)} participant-condition TFRs")
-    save_joint_plot(pooled, combined_label, OUTPUT_DIR)
-
-print("\nDone! All figures saved to:", OUTPUT_DIR)
+        print(f"  Pooling {len(pooled)} participant-condition TFRs")
+        save_joint_plot(pooled, f"{combined_label} [{roi_name}]", OUTPUT_DIR)

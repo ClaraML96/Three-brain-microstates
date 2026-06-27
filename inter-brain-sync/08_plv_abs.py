@@ -95,6 +95,8 @@ EPOCH_FILES = sorted(glob.glob(os.path.join(DATA_DIR, "*_FG_preprocessed-epo.fif
 #   solo         T1P             T1Pn
 #   triad        T3P             T3Pn
 CELLS = ["T1P", "T1Pn", "T3P", "T3Pn"]
+# CELLS = ["T1P", "T1Pn"]
+
 
 # Each analysis: which cells it needs, the contrast over per-cell matrices,
 # and direction labels for the sign of the summed t.
@@ -121,6 +123,14 @@ ANALYSES = [
      "neg": "size effect larger WITHOUT feedback",
      "title": "Group-size × feedback interaction"},
 ]
+
+# REPLACE the full ANALYSES list with:
+# ANALYSES = [
+#     {"name": "feedback_in_solo",  "cells": ["T1P", "T1Pn"],
+#      "fn": lambda M: M["T1P"] - M["T1Pn"],
+#      "pos": "T1P > T1Pn",  "neg": "T1Pn > T1P",
+#      "title": "Feedback within solo (T1P − T1Pn)"},
+# ]
 
 # ── Pre-registered analysis choices ──────────────────────────────────────────
 FREQ_BANDS     = {"alpha": (8, 12), "beta": (13, 30)}   # cluster family
@@ -510,7 +520,7 @@ def plot_cell_abs(cell_arr, cells, triads, counts, subdir):
     trial-shuffle null (plan doc, open item)."""
     chance_lb = float(np.sqrt(np.pi / (4 * N_TIMES_WINDOW)))   # naive lower bound
     gm = {b: {c: cell_arr[b][c].mean(axis=0) for c in cells} for b in band_order}
-    vmax = max(m.max() for b in band_order for m in gm[b].values())
+    vmin_fixed, vmax_fixed = 0.10, 0.18
     nb = len(FREQ_BANDS)
     fig, axes = plt.subplots(len(cells), nb, figsize=(5 * nb, 4.2 * len(cells)))
     axes = np.atleast_2d(axes).reshape(len(cells), nb)
@@ -518,8 +528,8 @@ def plot_cell_abs(cell_arr, cells, triads, counts, subdir):
         for col, band in enumerate(band_order):
             ax = axes[r, col]
             m = gm[band][cell]
-            im = ax.imshow(m, cmap="magma", vmin=0, vmax=vmax,
-                           aspect="equal", origin="upper")
+            im = ax.imshow(m, cmap="magma", vmin=vmin_fixed, vmax=vmax_fixed,
+                                          aspect="equal", origin="upper")
             ax.set_title(f"{cell} · {band} "
                          f"({FREQ_BANDS[band][0]}–{FREQ_BANDS[band][1]} Hz)\n"
                          f"mean={m.mean():.3f} (floor ≥{chance_lb:.3f})", fontsize=9)
@@ -538,10 +548,16 @@ def plot_cell_abs(cell_arr, cells, triads, counts, subdir):
 # STEP 8 — run each analysis
 # ═════════════════════════════════════════════════════════════════════════════
 def run_analysis(spec):
+    global _phase_cache
     print("=" * 70)
     print(f"ANALYSIS: {spec['name']}  —  {spec['title']}")
     print("=" * 70)
+    
     triads, cell_arr, counts = compute_cells(spec["cells"])
+    
+    # Free phase cache immediately after compute — no longer needed
+    _phase_cache.clear()
+    
     if not triads:
         print("  No triads with all 3 pairs in all cells/bands — skipped.\n")
         return None
@@ -550,60 +566,65 @@ def run_analysis(spec):
     print(f"  {len(triads)} triads; matched n per pair: "
           f"min={min(counts)}, median={int(np.median(counts))}, max={max(counts)}")
 
-    diff_by_band = {b: spec["fn"](cell_arr[b]) for b in FREQ_BANDS}
-    for b in FREQ_BANDS:
-        np.save(os.path.join(subdir, f"diff_{b}.npy"), diff_by_band[b])
+    # diff_by_band = {b: spec["fn"](cell_arr[b]) for b in FREQ_BANDS}
+    # for b in FREQ_BANDS:
+    #     np.save(os.path.join(subdir, f"diff_{b}.npy"), diff_by_band[b])
 
-    X = np.stack([diff_by_band[b].reshape(len(triads), -1) for b in band_order], axis=1)
-    T_obs, clusters, cluster_pv, H0 = permutation_cluster_1samp_test(
-        X, threshold=CLUSTER_T_THRESHOLD, n_permutations=N_PERMUTATIONS,
-        tail=CLUSTER_TAIL, adjacency=adjacency, out_type="mask",
-        seed=RNG_SEED, n_jobs=1, verbose=False,
-    )
-    T_map = T_obs.reshape(len(FREQ_BANDS), n_channels, n_channels)
-    sig = [ci for ci, p in enumerate(cluster_pv) if p < 0.05]
-    print(f"  {len(clusters)} candidate clusters; {len(sig)} significant at p<0.05.")
+    # X = np.stack([diff_by_band[b].reshape(len(triads), -1) for b in band_order], axis=1)
+    # T_obs, clusters, cluster_pv, H0 = permutation_cluster_1samp_test(
+    #     X, threshold=CLUSTER_T_THRESHOLD, n_permutations=N_PERMUTATIONS,
+    #     tail=CLUSTER_TAIL, adjacency=adjacency, out_type="mask",
+    #     seed=RNG_SEED, n_jobs=1, verbose=False,
+    # )
+    # T_map = T_obs.reshape(len(FREQ_BANDS), n_channels, n_channels)
+    # sig = [ci for ci, p in enumerate(cluster_pv) if p < 0.05]
+    # print(f"  {len(clusters)} candidate clusters; {len(sig)} significant at p<0.05.")
 
-    cluster_rows = []
-    for ci in np.argsort(cluster_pv):
-        mask = clusters[ci]
-        bands_in, pidx = np.where(mask)
-        ii, kk = pidx // n_channels, pidx % n_channels
-        sum_t = float(T_obs[mask].sum())
-        band_tag = "/".join(sorted({band_order[b] for b in np.unique(bands_in)}))
-        direction = spec["pos"] if sum_t > 0 else spec["neg"]
-        cluster_rows.append({
-            "cluster": ci, "p_value": round(float(cluster_pv[ci]), 4),
-            "n_pairs": int(mask.sum()), "sum_t": round(sum_t, 2),
-            "bands": band_tag, "direction": direction,
-            "example_pairs": "; ".join(
-                f"{ch_names[i]}~{ch_names[k]}" for i, k in list(zip(ii, kk))[:8]),
-        })
-        if cluster_pv[ci] < 0.05:
-            print(f"    cluster {ci}: p={cluster_pv[ci]:.4f} bands={band_tag} "
-                  f"n_pairs={int(mask.sum())} sumT={sum_t:+.1f} ({direction})")
-    if not sig:
-        print("    No significant clusters at p<0.05.")
-    pd.DataFrame(cluster_rows).to_csv(
-        os.path.join(subdir, "cluster_results.csv"), index=False)
-    np.save(os.path.join(subdir, "H0.npy"), H0)
+    # cluster_rows = []
+    # for ci in np.argsort(cluster_pv):
+    #     mask = clusters[ci]
+    #     bands_in, pidx = np.where(mask)
+    #     ii, kk = pidx // n_channels, pidx % n_channels
+    #     sum_t = float(T_obs[mask].sum())
+    #     band_tag = "/".join(sorted({band_order[b] for b in np.unique(bands_in)}))
+    #     direction = spec["pos"] if sum_t > 0 else spec["neg"]
+    #     cluster_rows.append({
+    #         "cluster": ci, "p_value": round(float(cluster_pv[ci]), 4),
+    #         "n_pairs": int(mask.sum()), "sum_t": round(sum_t, 2),
+    #         "bands": band_tag, "direction": direction,
+    #         "example_pairs": "; ".join(
+    #             f"{ch_names[i]}~{ch_names[k]}" for i, k in list(zip(ii, kk))[:8]),
+    #     })
+    #     if cluster_pv[ci] < 0.05:
+    #         print(f"    cluster {ci}: p={cluster_pv[ci]:.4f} bands={band_tag} "
+    #               f"n_pairs={int(mask.sum())} sumT={sum_t:+.1f} ({direction})")
+    # if not sig:
+    #     print("    No significant clusters at p<0.05.")
+    # pd.DataFrame(cluster_rows).to_csv(
+    #     os.path.join(subdir, "cluster_results.csv"), index=False)
+    # np.save(os.path.join(subdir, "H0.npy"), H0)
     # Persist per-band t-map and significant-cluster mask so the standalone
     # HyPyP connectogram (plv_connectogram.py, supervisor #2/#3) can render
     # without re-running the compute.
-    for bi, b in enumerate(band_order):
-        np.save(os.path.join(subdir, f"tmap_{b}.npy"), T_map[bi])
-        np.save(os.path.join(subdir, f"sigmask_{b}.npy"),
-                significant_mask(clusters, sig, bi))
+    # for bi, b in enumerate(band_order):
+    #     np.save(os.path.join(subdir, f"tmap_{b}.npy"), T_map[bi])
+    #     np.save(os.path.join(subdir, f"sigmask_{b}.npy"),
+    #             significant_mask(clusters, sig, bi))
 
-    plot_tmaps(T_map, clusters, sig, triads, spec, subdir)
-    plot_diffmap(diff_by_band, triads, spec, subdir)
-    plot_participation(clusters, sig, spec, subdir)
-    plot_null_histogram(H0, T_obs, clusters, cluster_pv, triads, spec, subdir)
-    plot_cell_abs(cell_arr, spec["cells"], triads, counts, subdir)   # #1: per-contrast
+    # plot_tmaps(T_map, clusters, sig, triads, spec, subdir)
+    # plot_diffmap(diff_by_band, triads, spec, subdir)
+    # plot_participation(clusters, sig, spec, subdir)
+    # plot_null_histogram(H0, T_obs, clusters, cluster_pv, triads, spec, subdir)
+    # plot_cell_abs(cell_arr, spec["cells"], triads, counts, subdir)   # #1: per-contrast
+    # print()
+    # return {"spec": spec, "triads": triads, "counts": counts,
+    #         "cell_arr": cell_arr, "diff_by_band": diff_by_band,
+    #         "cluster_pv": cluster_pv, "sig": sig}
+
+    plot_cell_abs(cell_arr, spec["cells"], triads, counts, subdir)
     print()
     return {"spec": spec, "triads": triads, "counts": counts,
-            "cell_arr": cell_arr, "diff_by_band": diff_by_band,
-            "cluster_pv": cluster_pv, "sig": sig}
+            "cell_arr": cell_arr}
 
 
 results = {a["name"]: run_analysis(a) for a in ANALYSES}
@@ -611,13 +632,18 @@ results = {a["name"]: run_analysis(a) for a in ANALYSES}
 print("=" * 70)
 print("2×2 SUMMARY  (v4 over-time estimator)")
 print("=" * 70)
+# for name, r in results.items():
+#     if r is None:
+#         print(f"  {name:18s}: skipped (no triads)")
+#         continue
+#     pmin = min(r["cluster_pv"]) if len(r["cluster_pv"]) else float("nan")
+#     print(f"  {name:18s}: N={len(r['triads']):2d}  "
+#           f"{len(r['sig'])} sig cluster(s)  min p={pmin:.3f}")
 for name, r in results.items():
     if r is None:
         print(f"  {name:18s}: skipped (no triads)")
         continue
-    pmin = min(r["cluster_pv"]) if len(r["cluster_pv"]) else float("nan")
-    print(f"  {name:18s}: N={len(r['triads']):2d}  "
-          f"{len(r['sig'])} sig cluster(s)  min p={pmin:.3f}")
+    print(f"  {name:18s}: N={len(r['triads']):2d}")
 print()
 
 # ═════════════════════════════════════════════════════════════════════════════
