@@ -55,7 +55,7 @@ condition_colors = {
 # Left motor cortex (contralateral to right-hand button press)
 # + Occipital (visual processing), averaged together
 # ------------------------------------------------------------
-channels_of_interest = ["C3", "O1", "O2", "Oz"]
+channels_of_interest = ["O1", "O2", "Oz"]
 
 # Morlet parameters
 foi = np.linspace(1, 30, 30, dtype=int)

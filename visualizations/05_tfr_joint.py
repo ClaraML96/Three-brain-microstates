@@ -13,7 +13,7 @@ DATA_DIR = (
 )
 
 OUTPUT_DIR = (
-    r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\figures\tfr_joint"
+    r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\figures\tfr_joint_roi"
 )
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -37,11 +37,14 @@ condition_labels = {
     "Condition_9": "Trio — No Feedback",
 }
 
-# Which conditions to merge into a single "Duo" plot.
-# Keys are the new combined label; values are the original condition keys to pool.
 duo_merge = {
     "Duo — With Feedback": ["Condition_2", "Condition_4", "Condition_6"],
     "Duo — No Feedback":   ["Condition_3", "Condition_5", "Condition_7"],
+}
+
+rois = {
+    "Sensorimotor": ["C3", "Cz", "CP3"],
+    "Occipital":    ["O1", "O2", "Oz"],
 }
 
 # Morlet parameters
@@ -49,50 +52,101 @@ foi      = np.linspace(1, 30, 30, dtype=int)
 n_cycles = 3 + 0.5 * foi
 baseline = (-0.25, 0)
 
-# Time-frequency points shown as scalp topographies in plot_joint.
-# Each entry is a (time_s, freq_hz) tuple.
+# Time-frequency points for scalp topographies in plot_joint
 topo_timefreqs = [
-    (0.5, 10.0),   # alpha at 0.5 s
-    (1.0, 10.0),   # alpha at 1.0 s
-    (2.0, 10.0),   # alpha at 2.0 s
-    (3.0, 20.0),   # beta  at 3.0 s
-    (4.0, 20.0),   # beta  at 4.0 s
+    (0.5, 10.0),
+    (1.0, 10.0),
+    (2.0, 10.0),
+    (3.0, 20.0),
+    (4.0, 20.0),
 ]
 
-# plot_joint colour limits (percent change from baseline)
 vmin, vmax = -60, 60
 
 # ------------------------------------------------------------
-# HELPER — compute and save one plot_joint figure
+# HELPER — compute and save one ROI line plot (mean over ROI channels)
 # ------------------------------------------------------------
-def save_joint_plot(tfr_list, label, out_dir):
-    """Grand-average tfr_list and save a plot_joint figure."""
+def save_roi_plot(tfr_list, condition_label, roi_name, roi_channels, out_dir):
+    """
+    Grand-average tfr_list, pick only the ROI channels, average them,
+    and plot a time-frequency power map for that ROI.
+    """
     grand_avg = mne.grand_average(tfr_list)
     grand_avg_crop = grand_avg.copy().crop(tmin=0.0, tmax=4.0)
 
-    fig = grand_avg_crop.plot_joint(
-        tmin=0.0,
-        tmax=4.0,
-        fmin=foi[0],
-        fmax=foi[-1],
-        timefreqs=topo_timefreqs,
-        topomap_args=dict(vlim=(vmin, vmax)),
-        title=f"TFR — {label}  (N={len(tfr_list)})",
-        show=False,
+    # Pick only channels that exist in this dataset
+    available_chs = grand_avg_crop.ch_names
+    roi_chs_present = [ch for ch in roi_channels if ch in available_chs]
+
+    if not roi_chs_present:
+        print(f"    Warning: none of {roi_channels} found in data for {condition_label}. Skipping.")
+        return
+
+    missing = set(roi_channels) - set(roi_chs_present)
+    if missing:
+        print(f"    Note: channels {missing} not found; using {roi_chs_present}")
+
+    # Average data across the ROI channels
+    ch_indices = [grand_avg_crop.ch_names.index(ch) for ch in roi_chs_present]
+    roi_data = grand_avg_crop.data[ch_indices].mean(axis=0)  # shape: (n_freqs, n_times)
+
+    # Build a single-channel AverageTFR for the ROI mean
+    # We reuse the info from the grand average but with one virtual channel
+    roi_info = mne.create_info(
+        ch_names=[roi_name],
+        sfreq=grand_avg_crop.info["sfreq"],
+        ch_types=["eeg"],
+    )
+    roi_tfr = mne.time_frequency.AverageTFRArray(
+        info=roi_info,
+        data=roi_data[np.newaxis, :, :],  # shape: (1, n_freqs, n_times)
+        times=grand_avg_crop.times,
+        freqs=grand_avg_crop.freqs,
+        nave=grand_avg_crop.nave,
     )
 
-    fname = label.replace(" ", "_").replace("/", "-").replace("—", "-") + "_joint.png"
-    out_path = os.path.join(out_dir, fname)
+    # Plot as a simple time-frequency image (no topomap — single virtual channel)
+    fig, ax = plt.subplots(figsize=(10, 4))
+    im = ax.imshow(
+        roi_tfr.data[0],
+        aspect="auto",
+        origin="lower",
+        extent=[roi_tfr.times[0], roi_tfr.times[-1],
+                roi_tfr.freqs[0], roi_tfr.freqs[-1]],
+        vmin=vmin, vmax=vmax,
+        cmap="RdBu_r",
+    )
+    cbar = fig.colorbar(im, ax=ax, pad=0.02)
+    cbar.set_label("Power change (%)", fontsize=10)
+
+    ax.set_xlabel("Time (s)", fontsize=11)
+    ax.set_ylabel("Frequency (Hz)", fontsize=11)
+
+    ch_str = ", ".join(roi_chs_present)
+    ax.set_title(
+        f"TFR — {condition_label}\n"
+        f"ROI: {roi_name}  [{ch_str}]  (N={len(tfr_list)})",
+        fontsize=11,
+    )
+
+    # Add vertical line at stimulus onset
+    ax.axvline(0, color="k", linewidth=1, linestyle="--", alpha=0.7)
+
+    plt.tight_layout()
+
+    safe_cond  = condition_label.replace(" ", "_").replace("/", "-").replace("—", "-")
+    safe_roi   = roi_name.replace(" ", "_")
+    fname      = f"{safe_cond}_{safe_roi}_roi.png"
+    out_path   = os.path.join(out_dir, fname)
     fig.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
-    print(f"  Saved: {out_path}")
+    print(f"    Saved: {out_path}")
 
 
 # ------------------------------------------------------------
 # STEP 1 — collect one averaged TFR per participant per condition
 # ------------------------------------------------------------
-# group_tfr[condition_key] = list of AverageTFR (one per participant)
-group_tfr = {}
+group_tfr = {}   # group_tfr[condition_key] = list of AverageTFR
 
 for pid, part in participants:
     print(f"\nLoading {pid} / participant {part}")
@@ -114,36 +168,34 @@ for pid, part in participants:
 
         tfr_avg = tfr.average()
         tfr_avg.apply_baseline(baseline, mode="percent")
-        tfr_avg.data *= 100      # express as % change
+        tfr_avg.data *= 100   # express as % change
 
         group_tfr.setdefault(condition, []).append(tfr_avg)
 
 # ------------------------------------------------------------
-# STEP 2 — plot individual (non-duo) conditions
+# STEP 2 — plot individual (non-duo) conditions, per ROI
 # ------------------------------------------------------------
-# Collect all condition keys that belong to a duo merge group
 duo_keys = {key for keys in duo_merge.values() for key in keys}
 
-print("\n--- Individual conditions ---")
+print("\n--- Individual conditions (per ROI) ---")
 for condition, tfr_list in group_tfr.items():
     if condition in duo_keys:
-        continue                          # handled separately below
+        continue
 
     label = condition_labels.get(condition, condition)
-    print(f"\nPlotting: {label}")
-    save_joint_plot(tfr_list, label, OUTPUT_DIR)
+    print(f"\nCondition: {label}")
+
+    for roi_name, roi_channels in rois.items():
+        print(f"  ROI: {roi_name}")
+        save_roi_plot(tfr_list, label, roi_name, roi_channels, OUTPUT_DIR)
 
 # ------------------------------------------------------------
-# STEP 3 — combined Duo plots
+# STEP 3 — combined Duo plots, per ROI
 # ------------------------------------------------------------
-print("\n--- Combined Duo conditions ---")
+print("\n--- Combined Duo conditions (per ROI) ---")
 for combined_label, source_conditions in duo_merge.items():
-    print(f"\nPlotting combined: {combined_label}")
+    print(f"\nCombined: {combined_label}")
 
-    # Pool all participant-level AverageTFR objects from the relevant conditions.
-    # Each entry in group_tfr[cond] is already baseline-corrected % change for
-    # one participant, so pooling them and calling grand_average gives the mean
-    # across all participants × duo-pair combinations.
     pooled = []
     for cond in source_conditions:
         if cond in group_tfr:
@@ -155,8 +207,10 @@ for combined_label, source_conditions in duo_merge.items():
         print(f"  No data found for {combined_label}, skipping.")
         continue
 
-    print(f"  Pooling {len(pooled)} participant-condition TFRs "
-          f"from {source_conditions}")
-    save_joint_plot(pooled, combined_label, OUTPUT_DIR)
+    print(f"  Pooling {len(pooled)} participant-condition TFRs from {source_conditions}")
 
-print("\nDone. All figures saved to:", OUTPUT_DIR)
+    for roi_name, roi_channels in rois.items():
+        print(f"  ROI: {roi_name}")
+        save_roi_plot(pooled, combined_label, roi_name, roi_channels, OUTPUT_DIR)
+
+print("\nDone. All ROI figures saved to:", OUTPUT_DIR)

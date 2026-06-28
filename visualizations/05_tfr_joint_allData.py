@@ -42,7 +42,7 @@ duo_merge = {
 rois = {
     # "Sensorimotor": ["C3", "C4", "Cz", "CP3", "CP4"],
     "Sensorimotor": ["C3", "Cz", "CP3"],
-    # "Occipital":    ["O1", "O2", "Oz"],
+    "Occipital":    ["O1", "O2", "Oz"],
 }
 
 foi      = np.linspace(1, 30, 30, dtype=int)
@@ -150,7 +150,7 @@ for (condition, roi_name), tfr_list in group_tfr.items():
     if condition in duo_keys:
         continue
 
-    label = f"{condition_labels.get(condition, condition)} [{roi_name}]"
+    label = f"{condition_labels.get(condition, condition)}"
     print(f"\nPlotting: {label}")
     save_joint_plot(tfr_list, label, OUTPUT_DIR)
 
@@ -160,7 +160,7 @@ for (condition, roi_name), tfr_list in group_tfr.items():
 print("\n--- Combined Duo conditions ---")
 for combined_label, source_conditions in duo_merge.items():
     for roi_name in rois:
-        print(f"\nPlotting combined: {combined_label} [{roi_name}]")
+        print(f"\nPlotting combined: {combined_label}")
 
         pooled = []
         for cond in source_conditions:
@@ -175,4 +175,4 @@ for combined_label, source_conditions in duo_merge.items():
             continue
 
         print(f"  Pooling {len(pooled)} participant-condition TFRs")
-        save_joint_plot(pooled, f"{combined_label} [{roi_name}]", OUTPUT_DIR)
+        save_joint_plot(pooled, f"{combined_label}", OUTPUT_DIR)
