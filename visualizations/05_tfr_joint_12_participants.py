@@ -1,4 +1,5 @@
 import os
+import gc
 import numpy as np
 import mne
 import matplotlib
@@ -13,7 +14,7 @@ DATA_DIR = (
 )
 
 OUTPUT_DIR = (
-    r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\figures\tfr_joint_roi"
+    r"C:\Users\clara\OneDrive - Danmarks Tekniske Universitet\Skrivebord\DTU\Human Centeret Artificial Intelligence\Thesis\figures\tfr_joint"
 )
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -42,17 +43,18 @@ duo_merge = {
     "Duo — No Feedback":   ["Condition_3", "Condition_5", "Condition_7"],
 }
 
+# ------------------------------------------------------------
+# CHANNELS OF INTEREST
+# ------------------------------------------------------------
 rois = {
     "Sensorimotor": ["C3", "Cz", "CP3"],
     "Occipital":    ["O1", "O2", "Oz"],
 }
 
-# Morlet parameters
 foi      = np.linspace(1, 30, 30, dtype=int)
 n_cycles = 3 + 0.5 * foi
 baseline = (-0.25, 0)
 
-# Time-frequency points for scalp topographies in plot_joint
 topo_timefreqs = [
     (0.5, 10.0),
     (1.0, 10.0),
@@ -64,153 +66,127 @@ topo_timefreqs = [
 vmin, vmax = -60, 60
 
 # ------------------------------------------------------------
-# HELPER — compute and save one ROI line plot (mean over ROI channels)
+# HELPER — compute and save one plot_joint figure
 # ------------------------------------------------------------
-def save_roi_plot(tfr_list, condition_label, roi_name, roi_channels, out_dir):
-    """
-    Grand-average tfr_list, pick only the ROI channels, average them,
-    and plot a time-frequency power map for that ROI.
-    """
+def save_joint_plot(tfr_list, label, out_dir):
+    """Grand-average tfr_list and save a plot_joint figure."""
+    if not tfr_list:
+        print(f"  Skipping plot for {label}: No data collected.")
+        return
+
     grand_avg = mne.grand_average(tfr_list)
     grand_avg_crop = grand_avg.copy().crop(tmin=0.0, tmax=4.0)
 
-    # Pick only channels that exist in this dataset
-    available_chs = grand_avg_crop.ch_names
-    roi_chs_present = [ch for ch in roi_channels if ch in available_chs]
-
-    if not roi_chs_present:
-        print(f"    Warning: none of {roi_channels} found in data for {condition_label}. Skipping.")
-        return
-
-    missing = set(roi_channels) - set(roi_chs_present)
-    if missing:
-        print(f"    Note: channels {missing} not found; using {roi_chs_present}")
-
-    # Average data across the ROI channels
-    ch_indices = [grand_avg_crop.ch_names.index(ch) for ch in roi_chs_present]
-    roi_data = grand_avg_crop.data[ch_indices].mean(axis=0)  # shape: (n_freqs, n_times)
-
-    # Build a single-channel AverageTFR for the ROI mean
-    # We reuse the info from the grand average but with one virtual channel
-    roi_info = mne.create_info(
-        ch_names=[roi_name],
-        sfreq=grand_avg_crop.info["sfreq"],
-        ch_types=["eeg"],
-    )
-    roi_tfr = mne.time_frequency.AverageTFRArray(
-        info=roi_info,
-        data=roi_data[np.newaxis, :, :],  # shape: (1, n_freqs, n_times)
-        times=grand_avg_crop.times,
-        freqs=grand_avg_crop.freqs,
-        nave=grand_avg_crop.nave,
+    fig = grand_avg_crop.plot_joint(
+        tmin=0.0,
+        tmax=4.0,
+        fmin=foi[0],
+        fmax=foi[-1],
+        timefreqs=topo_timefreqs,
+        topomap_args=dict(vlim=(vmin, vmax)),
+        title=f"TFR — {label}  (N={len(tfr_list)})",
+        show=False,
     )
 
-    # Plot as a simple time-frequency image (no topomap — single virtual channel)
-    fig, ax = plt.subplots(figsize=(10, 4))
-    im = ax.imshow(
-        roi_tfr.data[0],
-        aspect="auto",
-        origin="lower",
-        extent=[roi_tfr.times[0], roi_tfr.times[-1],
-                roi_tfr.freqs[0], roi_tfr.freqs[-1]],
-        vmin=vmin, vmax=vmax,
-        cmap="RdBu_r",
-    )
-    cbar = fig.colorbar(im, ax=ax, pad=0.02)
-    cbar.set_label("Power change (%)", fontsize=10)
-
-    ax.set_xlabel("Time (s)", fontsize=11)
-    ax.set_ylabel("Frequency (Hz)", fontsize=11)
-
-    ch_str = ", ".join(roi_chs_present)
-    ax.set_title(
-        f"TFR — {condition_label}\n"
-        f"ROI: {roi_name}  [{ch_str}]  (N={len(tfr_list)})",
-        fontsize=11,
-    )
-
-    # Add vertical line at stimulus onset
-    ax.axvline(0, color="k", linewidth=1, linestyle="--", alpha=0.7)
-
-    plt.tight_layout()
-
-    safe_cond  = condition_label.replace(" ", "_").replace("/", "-").replace("—", "-")
-    safe_roi   = roi_name.replace(" ", "_")
-    fname      = f"{safe_cond}_{safe_roi}_roi.png"
-    out_path   = os.path.join(out_dir, fname)
+    fname = label.replace(" ", "_").replace("/", "-").replace("—", "-") + "_joint_ROI.png"
+    out_path = os.path.join(out_dir, fname)
     fig.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
-    print(f"    Saved: {out_path}")
+    print(f"  Saved: {out_path}")
 
 
 # ------------------------------------------------------------
 # STEP 1 — collect one averaged TFR per participant per condition
 # ------------------------------------------------------------
-group_tfr = {}   # group_tfr[condition_key] = list of AverageTFR
+group_tfr = {}  # keyed by (condition, roi_name)
 
 for pid, part in participants:
-    print(f"\nLoading {pid} / participant {part}")
-    epoch_file = os.path.join(DATA_DIR, f"{pid}_p{part}_ica_cleaned-epo.fif")
-    epochs = mne.read_epochs(epoch_file, preload=True)
-    epochs.pick("eeg")
+    try:
+        print(f"\nLoading {pid} / participant {part}")
+        epoch_file = os.path.join(DATA_DIR, f"{pid}_p{part}_ica_cleaned-epo.fif")
+        epochs = mne.read_epochs(epoch_file, preload=True, verbose=False)
+        epochs.pick("eeg")
 
-    for condition in epochs.event_id:
-        print(f"  TFR: {condition}")
-        epochs_cond = epochs[condition]
+        for roi_name, roi_channels in rois.items():
+            available = [ch for ch in roi_channels if ch in epochs.ch_names]
+            if not available:
+                print(f"  WARNING: No {roi_name} channels found — skipping ROI.")
+                continue
+            
+            missing = [ch for ch in roi_channels if ch not in epochs.ch_names]
+            if missing:
+                print(f"  Note: {roi_name} channels not found (skipped): {missing}")
 
-        tfr = epochs_cond.compute_tfr(
-            method="morlet",
-            freqs=foi,
-            n_cycles=n_cycles,
-            return_itc=False,
-            average=False,
-        )
+            # Crucial part: Pick ONLY the channels matching this ROI 
+            epochs_roi = epochs.copy().pick(available)
 
-        tfr_avg = tfr.average()
-        tfr_avg.apply_baseline(baseline, mode="percent")
-        tfr_avg.data *= 100   # express as % change
+            for condition in epochs_roi.event_id:
+                if condition not in condition_labels:
+                    continue
 
-        group_tfr.setdefault(condition, []).append(tfr_avg)
+                print(f"  Computing TFR for condition: {condition}, ROI: {roi_name}")
+                epochs_cond = epochs_roi[condition]
 
-# ------------------------------------------------------------
-# STEP 2 — plot individual (non-duo) conditions, per ROI
-# ------------------------------------------------------------
+                tfr = epochs_cond.compute_tfr(
+                    method="morlet",
+                    freqs=foi,
+                    n_cycles=n_cycles,
+                    return_itc=False,
+                    average=False,
+                    verbose=False
+                )
+
+                tfr_avg = tfr.average()
+                tfr_avg.apply_baseline(baseline, mode="percent", verbose=False)
+                tfr_avg.data *= 100
+                tfr_avg.data = tfr_avg.data.astype(np.float32)
+
+                group_tfr.setdefault((condition, roi_name), []).append(tfr_avg)
+
+        del epochs
+        gc.collect()
+
+    except Exception as e:
+        print(f"  Skipping {pid}_p{part} due to error: {e}")
+        continue
+
+# ----------------------------
+# STEP 2 — individual plots
+# ----------------------------
 duo_keys = {key for keys in duo_merge.values() for key in keys}
 
-print("\n--- Individual conditions (per ROI) ---")
-for condition, tfr_list in group_tfr.items():
+print("\n--- Individual conditions ---")
+for (condition, roi_name), tfr_list in group_tfr.items():
     if condition in duo_keys:
         continue
 
-    label = condition_labels.get(condition, condition)
-    print(f"\nCondition: {label}")
+    base_label = condition_labels.get(condition, condition)
+    label = f"{base_label} — {roi_name}"
+    print(f"\nPlotting: {label}")
+    save_joint_plot(tfr_list, label, OUTPUT_DIR)
 
-    for roi_name, roi_channels in rois.items():
-        print(f"  ROI: {roi_name}")
-        save_roi_plot(tfr_list, label, roi_name, roi_channels, OUTPUT_DIR)
-
-# ------------------------------------------------------------
-# STEP 3 — combined Duo plots, per ROI
-# ------------------------------------------------------------
-print("\n--- Combined Duo conditions (per ROI) ---")
+# ----------------------------
+# STEP 3 — combined Duo plots
+# ----------------------------
+print("\n--- Combined Duo conditions ---")
 for combined_label, source_conditions in duo_merge.items():
-    print(f"\nCombined: {combined_label}")
+    for roi_name in rois:
+        display_label = f"{combined_label} — {roi_name}"
+        print(f"\nPlotting combined: {display_label}")
 
-    pooled = []
-    for cond in source_conditions:
-        if cond in group_tfr:
-            pooled.extend(group_tfr[cond])
-        else:
-            print(f"  Warning: {cond} not found in data, skipping.")
+        pooled = []
+        for cond in source_conditions:
+            key = (cond, roi_name)
+            if key in group_tfr:
+                pooled.extend(group_tfr[key])
+            else:
+                print(f"  Warning: {cond} / {roi_name} not found, skipping.")
 
-    if not pooled:
-        print(f"  No data found for {combined_label}, skipping.")
-        continue
+        if not pooled:
+            print(f"  No data found for {display_label}, skipping.")
+            continue
 
-    print(f"  Pooling {len(pooled)} participant-condition TFRs from {source_conditions}")
+        print(f"  Pooling {len(pooled)} participant-condition TFRs")
+        save_joint_plot(pooled, display_label, OUTPUT_DIR)
 
-    for roi_name, roi_channels in rois.items():
-        print(f"  ROI: {roi_name}")
-        save_roi_plot(pooled, combined_label, roi_name, roi_channels, OUTPUT_DIR)
-
-print("\nDone. All ROI figures saved to:", OUTPUT_DIR)
+print("\nDone. All plot_joint ROI figures saved to:", OUTPUT_DIR)
