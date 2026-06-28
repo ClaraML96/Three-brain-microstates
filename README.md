@@ -29,7 +29,7 @@ Active scripts by stage. Walkthroughs and notes are kept alongside the scripts.
 ### Thesis scripts
 
 | Script | Folder | 
-| --- | --- | --- |
+| --- | --- |
 | [01_preprocess.py](preprocess/01_preprocess.py) | `preprocess` | 
 | [02_ica.py](preprocess/02_ica.py) | `preprocess` | 
 | [04_erp_92_participants.py](visualizations/04_erp_92_participants.py) | `visualizations` | 
