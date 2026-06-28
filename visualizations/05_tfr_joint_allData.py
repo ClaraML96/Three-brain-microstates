@@ -40,8 +40,9 @@ duo_merge = {
 # CHANNELS OF INTEREST
 # ------------------------------------------------------------
 rois = {
-    "Sensorimotor": ["C3", "C4", "Cz", "CP3", "CP4"],
-    "Occipital":    ["O1", "O2", "Oz"],
+    # "Sensorimotor": ["C3", "C4", "Cz", "CP3", "CP4"],
+    "Sensorimotor": ["C3", "Cz", "CP3"],
+    # "Occipital":    ["O1", "O2", "Oz"],
 }
 
 foi      = np.linspace(1, 30, 30, dtype=int)
