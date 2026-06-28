@@ -550,9 +550,31 @@ def run_analysis(spec):
     print(f"  {len(triads)} triads; matched n per pair: "
           f"min={min(counts)}, median={int(np.median(counts))}, max={max(counts)}")
 
+    # diff_by_band = {b: spec["fn"](cell_arr[b]) for b in FREQ_BANDS}
+    # for b in FREQ_BANDS:
+    #     np.save(os.path.join(subdir, f"diff_{b}.npy"), diff_by_band[b])
+
     diff_by_band = {b: spec["fn"](cell_arr[b]) for b in FREQ_BANDS}
     for b in FREQ_BANDS:
         np.save(os.path.join(subdir, f"diff_{b}.npy"), diff_by_band[b])
+
+    # Save per-condition grand-mean PLV matrices for the connectogram renderer.
+    # cell_arr[b][c] is (n_triads, n_ch, n_ch); .mean(axis=0) gives (n_ch, n_ch).
+    # Only the two cells that form the contrast are saved — the connectogram
+    # renders exactly these two as the "condition A" and "condition B" raw PLV
+    # figures alongside the contrast figure.
+    # For 2-cell analyses (e.g. grpsize_in_fb: cells = ["T3P", "T1P"]) this is
+    # straightforward. For the interaction (4 cells) the contrast is a double
+    # difference, so there is no single pair of "raw PLV" conditions; the saves
+    # are still done per the two primary cells listed first in spec["cells"] so
+    # the connectogram can at least show the first-level operands — treat those
+    # figures as descriptive only for the interaction analysis.
+    cell_a, cell_b = spec["cells"][0], spec["cells"][1]   # contrast is cell_a − cell_b
+    for b in FREQ_BANDS:
+        np.save(os.path.join(subdir, f"plv_{cell_a}_{b}.npy"),
+                cell_arr[b][cell_a].mean(axis=0))          # (n_ch, n_ch) grand mean
+        np.save(os.path.join(subdir, f"plv_{cell_b}_{b}.npy"),
+                cell_arr[b][cell_b].mean(axis=0))          # (n_ch, n_ch) grand mean
 
     X = np.stack([diff_by_band[b].reshape(len(triads), -1) for b in band_order], axis=1)
     T_obs, clusters, cluster_pv, H0 = permutation_cluster_1samp_test(
@@ -707,4 +729,5 @@ print("  one subfolder per analysis, each with:")
 print("    cluster_results.csv · tmap.png · diffmap.png · participation.png")
 print("    null_histogram.png · cell_abs_plv.png (per-contrast Solo/Trio abs maps, #1)")
 print("    H0.npy · diff_<band>.npy · tmap_<band>.npy · sigmask_<band>.npy")
+print("    plv_<cellA>_<band>.npy · plv_<cellB>_<band>.npy  (grand-mean per condition)")
 print("  the *_<band>.npy feed the standalone HyPyP connectogram (plv_connectogram.py).")
